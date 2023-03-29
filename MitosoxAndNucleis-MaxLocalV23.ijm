@@ -295,7 +295,8 @@ function CountNucleisAreaLessThan_control(image,k,a){
 		exit("Results tab is need !");
 		
 	if(nSlices<1)
-		exit("Stack is needed !"); // <= ou < simple
+		exit("Stack is needed !");
+ // <= ou < simple
 			    
 	setSlice(k);
 	n=nResults;
