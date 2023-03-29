@@ -1,3 +1,9 @@
+//06/07/2022
+//ver 2.3
+//the nucleis count is now ajust by a centroid proximity function to suppress two time's counted nucleis 
+//ver 2.2 
+//the nucleis count is now applied on the whole data set and results are redirected to a chosen CSV file 
+
 //macro pour Marlene. C.Rouviere CBI Image Processing
 //4/10/2021
 //ver 2.1
@@ -15,340 +21,399 @@
 //			add 2 new functions
 
 
-//QPath
-//3D suite
-//3D stardist
 
+/**LANCEMENT
+ * 
+ */
 requires("1.53d");
-
-//close
-if(isOpen("Results")){
-	selectWindow("Results");
-	run("Close");
-	}
-if(isOpen("Log")){
-	selectWindow("Log");
-	run("Close");
-	}
-run("Remove Overlay");
-run("Select None");
-
-//tableau des informations : récolte les informations du fichier traité pour les ajouter au tableau des résultats en fin de boucle
-info_table = newArray(1);
-
-///////
-
 launch();
 
-///////
-
-//all the processing is grouped
+/** INITIALISATION
+ * > choix du mode de lancement
+ * > lancement des procedures en fonction des choix :
+ * -> si conversion lif tif, recuperation des répertoires d'entrée et de sortie des fichiers
+ * -> si comptage, 	recuperation du repertoire d'entrée
+ * 					appel à GUI()
+ * 					recuperation des paramètres
+ * 					appel à forAllTiff
+ * > message de terminaison
+ */
 function launch(){
 	
-	lif_dir = getDirectory("Choose the directory where .lif files are stored ");
-	tif_dir = getDirectory("Select the directory where will be stored .tif files ...");
-	
-	//outputPath=File.openDialog("Select output file ...");
-	//outputPathCSV=File.openDialog("Select output CSV file ...");
-	
-	startTime = getTime();
-
-	//ret_arr = GUI();
-    //p = ret_arr[0];
-    //aire = ret_arr[1];
-    //rayon = ret_arr[2];
-	
-	setBatchMode(true);
-	forAllLif(lif_dir,tif_dir);
-	
-	setBatchMode(false);
-	//forAllTiff(tif_dir);
-	
-	endTime = getTime();
-	
-	totalTime = endTime - startTime;
-	totalSeconds = totalTime / 1000;
-	hours = totalSeconds / 3600;
-	minutes = (totalSeconds % 3600) / 60;
-	seconds = totalSeconds % 60;
-	print("Fin du programme en : " + round(hours) + " h " + round(minutes) + " min " + round(seconds) + " s ");
-}
-
-//GUI
-function GUI() { 
-	Dialog.create("Parameters ajusting");
-	Dialog.addMessage("Choose Prominances");
-	Dialog.addSlider("for channel 1 (mitosox): ", 1, 255, 60);
-	Dialog.addNumber("Nucleis's Area above (pixels) will be counted :", 1100);
-	Dialog.addNumber("Size of nucleis (µm)", 4);  
+	Dialog.create("Launch style");
+	Dialog.addCheckbox("lif to tif", false);
+	Dialog.addCheckbox("tif to count", false);
 	Dialog.show();
+	lifToTiff = Dialog.getCheckbox();
+	tifToCount = Dialog.getCheckbox();
 	
-	p=Dialog.getNumber();//prominence channel 1
-	aire=Dialog.getNumber();
-	rayon = Dialog.getNumber();
+	
+	if(lifToTiff){
+		lif_dir = getDirectory("Select the directory where .lif files are stored ");
+		tif_dir = getDirectory("Select the directory where will be stored .tif files ...");
+		
+		setBatchMode(true);
+		forAllLif(lif_dir,tif_dir);
+	}
+	if(tifToCount){
+		if(!lifToTiff){
+			tif_dir = getDirectory("Select the directory where .tif files are stored ...");
+		}
+		
+		//outputPath=File.openDialog("Select output file ..."); //test
+		outputPathCSV = File.openDialog("Select output CSV file ...");
+		File.append("name,unit,pixelW,pixelH,pixelZ,width,height,channels,frames,slices,aire,diameter,marge,totalThick,nucleusSlices,totalPlainNucleus,slicesLeft,totalNotCorr,corrTotale", outputPathCSV);
+		
+		ret_arr = GUI();
+		aire = ret_arr[0];
+		diameter = ret_arr[1];
+		setBatchMode(false);
+		forAllTiff(tif_dir);
+	}
 
-	return newArray(p, aire, rayon);	
+	print("success main");
 }
 
-function forAllLif(lif_dir, tif_dir) {
-	
-	LIF_file_list = getFileList(lif_dir); 							// récupère les fichiers du dossier lif_dir
-	for (i=0; i<LIF_file_list.length; i++) { 
-		if (endsWith(LIF_file_list[i], ".lif")){ 					// filtre les fichiers LIF
-			gestionFichiers(lif_dir, LIF_file_list[i], tif_dir);	// appel de la fonction gestionFichiers dessus
+/** CONVERTION LIF > TIFF 
+ * > récuperation de la liste des fichiers du répertoire des .lif
+ * > boucle sur la liste, si le fichier est un .lif -> appel à gestionFichier()
+ */
+function forAllLif(lif_dir,tif_dir) { 
+	file_list = getFileList(lif_dir);
+	for (i=0; i<file_list.length; i++) {
+		if (endsWith(file_list[i], ".lif")){
+			gestionFichiers(lif_dir,file_list[i],tif_dir);
 			close("*");
 		}
 	}
 }
 
-function gestionFichiers(lif_dir, LIF_file_name, outPath) {
-	
-	filePath = lif_dir + LIF_file_name; 					// construction du chemin du fichier
-	
-	run("Bio-Formats Macro Extensions");				// lance le plugin Bio-Format (nécessaire pour les fontions suivantes)
-	Ext.setId(filePath);								// donne le chemin du fichier à l'objet qui contrôle le plugin
-	Ext.getCurrentFile(file);							// place dans l'objet le fichier adress
-	Ext.getSeriesCount(serieCount);						// récupère le nombre d'image dans le set (ici fichier LIF)
-	tif_names = newArray(serieCount);					// initialise le tableau des noms des fichiers
+/** CONVERSION des LIFF en TIFF
+ * > récupération de l'adresse du fichier
+ * > préparation
+ * > boucle pour récupérer tous les .tif
+ */
+function gestionFichiers(lif_dir,file_name,outPath) {
+	filePath = lif_dir + file_name;
 
-	for (s=0; s<serieCount; s++) {
-		Ext.setSeries(s);								// place le curseur sur le fichier TIFF
-		tif_names[s] = "";
-		Ext.getSeriesName(tif_names[s]);				// récupère le nom du fichier
-		file_name2 = tif_names[s]+".tif";				// ajout de l'extension
+	run("Bio-Formats Macro Extensions");
+	Ext.setId(filePath);
+	Ext.getCurrentFile(file);
+	Ext.getSeriesCount(serieCount);
+	print("count = " + serieCount);
+	
+	tif_names = newArray(serieCount);
+
+	for (s=0; s<serieCount; ) {
+		Ext.setSeries(s);
+		tif_names[s] = ""; 
+		Ext.getSeriesName(tif_names[s]);
+		file_name2 = tif_names[s]+".tif";
+		print(file_name2);
 		
+		s++;
 		// Bio-Formats Importer uses an argument that can be built by concatenate a set of strings
-		run("Bio-Formats Importer", "open=&filePath autoscale color_mode=Default view=Hyperstack stack_order=XYCZT series_"+ (s+1));
-		LIF_file_name = replace(LIF_file_name,".lif"," - ");	// pour rendre le fichier lisible
-		file_name2 = replace(file_name2, "/", "_");		// idem
-		saveAs("Tiff",outPath+LIF_file_name+file_name2);	// enregistre le fichier
-		//Ext.setId(filePath);
-		//close();
+		run("Bio-Formats Importer", "open=&filePath autoscale color_mode=Default view=Hyperstack stack_order=XYCZT series_"+s);
+		file_name = replace(file_name,".lif"," - ");//tiff name differentiation
+		file_name2 = replace(file_name2, "/", "_");
+		saveAs("Tiff",outPath+file_name+file_name2);
 	}
+	
 }
 
+/** PARAMETRAGE
+ * > choix des paramètres : aire minimale de prise en compte, taille du noyau attendue
+ * (propre au projet) taille du noyau par défaut à trois pour être sensiblement en deça des tailles observées
+ */
+function GUI() { 
+	Dialog.create("Parameters ajusting");
+	Dialog.addNumber("Nucleis's Area above (pixels) will be counted :", 1100);
+	Dialog.addNumber("Size of nucleis (µm)", 3); 
+	Dialog.show();
+	
+	aire=Dialog.getNumber();
+	diameter = Dialog.getNumber();
 
+	return newArray(aire, diameter);	
+}
+
+/** GENERALISATION DU TRAITEMENT
+ * récuperation de la liste des fichiers du répertoire des .tif
+ * boucle sur la liste, si le fichier est un .Tif -> appel à ouverture()
+ */
 function forAllTiff(tif_dir) {
 	file_list = getFileList(tif_dir);
 	for (i=0; i < file_list.length; i++) {
 		if (endsWith(file_list[i], ".tif")){
 			fichier = file_list[i];
-			info_table = newArray(fichier,p,aire,rayon);				//initialisation du tableau au nom du .tif
+			info_table = newArray(fichier,aire,diameter);
 			file_path = tif_dir + fichier;
-			launch_2(file_path);
-			close("*");
+			ouverture(file_path);
+			//close("*");
 		}
 	}
 }
 
-
-function launch_2(filepath){
+/** OUVETURE du FICHIER
+ * relica d'une autre architecture à conserver pour la lisibilité sinon incorporer à splitProjection()
+ */
+function ouverture(filepath){
 	open(file_path);
 	dir = File.getParent(fichier);
 	name = File.getName(fichier);
-	selectWindow(name);
 	
-	getPixelSize(unit, pixelw, pixelh,pixelz);
-	print("pixelz = " + pixelz);
-	if((unit=="pixels")||(unit=="pixel"))
-		exit("pixel size is not scaled !");
+	splitProjections(name);
+	
+	selectWindow("ROI Manager");
+	run("Close");
+}
+
+/** PREPARATION des PROJECTIONS
+ * > récupération des détails du fichier
+ * > calculs des paramètres de la découpe en projection
+ * > traitement du stack avant découpe
+ * > initialisation de la table des positions
+ * > boucle pour la création des projections et pour l'appel à measurement()
+ * > préparation puis lancement de l'appel à correction()
+ */
+function splitProjections(name){
+	selectWindow(name);
+	getPixelSize(unit, pixelW, pixelH, pixelZ);
 	getDimensions(width, height, channels, slices, frames);
-	thick=slices*pixelz;
-	thick1nuclus=floor(thick/rayon);
-	SlicesFor1Nucleus=floor(slices/thick1nuclus);
-	premier=slices%SlicesFor1Nucleus+1;
 	
+	if((unit=="pixels")||(unit=="pixel"))	exit("pixel size is not scaled !");
+	
+	totalThick = slices*pixelZ; //en µm
+	nucleusSlices = floor(diameter/pixelZ); //(nombre de tranches par projection)
+	totalPlainNucleus = floor(slices/nucleusSlices); //nombre de projection(s)
+	slicesLeft = slices%nucleusSlices;
+	
+	//print("totalPlainNuleus="+totalPlainNucleus+" , nucleusSlices=" + nucleusSlices + " , slicesLeft="+slicesLeft);
+	
+	run("Duplicate...", "title=nucleis duplicate channels=2");
+	run("Gaussian Blur 3D...", "x=2 y=2 z=2"); // Christian préferait une valeur de 3,3,3
 	selectWindow(name);
-	
-	//reduce number of slice to be able to do group Z project for each channels
-	run("Duplicate...", "title=mitosox duplicate channels=1 slices="+premier+"-"+slices);
-	run("Gaussian Blur 3D...", "x=3 y=3 z=3");
-	run("Grouped Z Project...", "projection=[Max Intensity] group="+SlicesFor1Nucleus);
-	selectWindow("mitosox");
 	close();
-	selectWindow(name);
-	run("Duplicate...", "title=nucleis duplicate channels=2 slices="+premier+"-"+slices);
-	run("Gaussian Blur 3D...", "x=3 y=3 z=3");
-	run("Grouped Z Project...", "projection=[Max Intensity] group="+SlicesFor1Nucleus);
+	
+	Table.create("tabXY");
+	arrSize = newArray(totalPlainNucleus);
+	totalNotCorr = 0;
+	
+	//toutes les projections sont traitées avant correction
+	for (i = 0; i < totalPlainNucleus; i++) {
+		selectWindow("nucleis");
+		run("Z Project...","start=" + i*nucleusSlices + " stop=" + ((i+1)*nucleusSlices)-1 + " projection=[Median]");
+		rename("p"+i);
+		
+		measureRes = measurement(i);
+		arrSize[i] = measureRes[0];
+		totalNotCorr+=measureRes[1];
+		//print("total proj = " + measureRes[1]);
+		
+		selectWindow("p"+i);
+		close();
+	}
+	
 	selectWindow("nucleis");
 	close();
 	
-	selectWindow(name);
+	corrTotale = 0; // variable de correction
 	
-	close();
-	//now we get only 2 stacks :MAX_mitoxox and MAX_nucleis
+	marge = floor((diameter/pixelZ)/10); // traitement de la marge sujet à modification pour ajuster la precision de la correction
 	
-	//--------------------------------------- Nucleis calculation
+	if(totalPlainNucleus>1){
+		for (i = 0; i < totalPlainNucleus-1; i++) {
+			c = correction(i,i+1,marge);
+			corrTotale += c;
+			//print("cor = " + c);
+		}
+	}
+	
+	selectWindow("tabXY");
+	run("Close");
+	
+	csvArray = newArray(name,unit,pixelW,pixelH,pixelZ,width,height,channels,frames,slices,aire,diameter,marge,totalThick,nucleusSlices,totalPlainNucleus,slicesLeft,totalNotCorr,corrTotale);
+	csvString = "";
+	
+	for (i = 0; i < csvArray.length-1; i++) csvString = csvString + csvArray[i] + "," ;
+	csvString = csvString + csvArray[csvArray.length-1];
+	//print(csvString);
+	//print(outputPathCSV);
+	File.append(csvString, outputPathCSV);
+}
+
+/** PREPARATION de l'IMAGE et LANCEMENT du COMPTAGE et de la CORRECTION
+ * > préparation des mesures
+ * > netoyage de l'écran et ajustement de l'image
+ * > duplication puis éxecution de stardist
+ * > appel à CountNucleisAreaLessThan()
+ * > appel à CountNucleis_control()
+ */
+function measurement(k) { 
 	run("Set Measurements...", "area centroid limit redirect=None decimal=3");
 	//clean
-		if(isOpen("Results")){
-			selectWindow("Results");
-			run("Close");
-		}
-		if(isOpen("ROI Manager")){
-			selectWindow("ROI Manager");
-			run("Close");
-		}
+	if(isOpen("Results")){
+		selectWindow("Results");
+		run("Close");
+	}
+	if(isOpen("ROI Manager")){
+		selectWindow("ROI Manager");
+		run("Close");
+	}
 	
-	selectWindow("MAX_nucleis");
+	selectWindow("p"+k);
 	run("8-bit");
 	run("Set Scale...", "distance=0 known=0 unit=pixel");
-	ns=nSlices;
-	
-	//process
-	total=0;
-	print("-------------------- nSlices = " + ns + " ------------------");
-	for(j=1;j<=ns;j++){
-		selectWindow("MAX_nucleis");
-		setSlice(j);
-		run("Duplicate...", "title=imgDup");
-		run("Command From Macro", "command=[de.csbdresden.stardist.StarDist2D], args=['input':'imgDup', 'modelChoice':'Versatile (fluorescent nuclei)', 'normalizeInput':'true', 'percentileBottom':'72.7', 'percentileTop':'98.4', 'probThresh':'0.5', 'nmsThresh':'0.4', 'outputType':'Both', 'modelFile':'C:\\\\Users\\\\crouvier\\\\Downloads\\\\3d-unet---arabidopsis---zerocostdl4mic_tensorflow_saved_model_bundle\\\\TF_SavedModel.zip', 'nTiles':'1', 'excludeBoundary':'2', 'roiPosition':'Automatic', 'verbose':'true', 'showCsbdeepProgress':'false', 'showProbAndDist':'false'], process=[false]");
-		rename("labels");
-		s=CountNucleisAreaLessThan("labels",aire);
-		
-		total=total+s;
-		
-		selectWindow("labels");
-		close();
-		
-		CountNucleisAreaLessThan_control("MAX_nucleis",j,aire);
-		//IJ.renameResults("Results"+"_"+j);  //for test
-		if(isOpen("Results")){
-			selectWindow("Results");
-			run("Close");
-		}
-		selectWindow("imgDup");
-		close();
-	}
 
-	outputRes = name + " : Nucleis total number = "+total;
+	total=0; //variable de compte des objets
 	
-	tab_buff = newArray(unit,pixelw,pixelh,pixelz,width,height,channels,slices,frames,thick,ns,total);
+	run("Duplicate...", "title=imgDup");
+	run("Command From Macro", "command=[de.csbdresden.stardist.StarDist2D], args=['input':'imgDup', 'modelChoice':'Versatile (fluorescent nuclei)', 'normalizeInput':'true', 'percentileBottom':'72.7', 'percentileTop':'98.4', 'probThresh':'0.5', 'nmsThresh':'0.4', 'outputType':'Both', 'modelFile':'C:\\\\Users\\\\crouvier\\\\Downloads\\\\3d-unet---arabidopsis---zerocostdl4mic_tensorflow_saved_model_bundle\\\\TF_SavedModel.zip', 'nTiles':'1', 'excludeBoundary':'2', 'roiPosition':'Automatic', 'verbose':'true', 'showCsbdeepProgress':'false', 'showProbAndDist':'false'], process=[false]");
+	rename("labels");
 	
-	//affichage dans une fenêtre log
-	print(outputRes);
-	//enregistrement dans un fichier
-	end_buff = "";
-	for (i = 0; i < info_table.length; i++) {
-		end_buff = end_buff + info_table[i] + ",";
+	s=CountNucleisAreaLessThan("labels",aire);
+	total=total+s;
+	
+	selectWindow("labels");
+	close();
+	
+	arrEnd = CountNucleis_control("p"+k,k,aire);
+	//IJ.renameResults("Results"+"_"+k);  //for test
+	
+	if(isOpen("Results")){
+		selectWindow("Results");
+		run("Close");
 	}
-	for (i = 0; i < tab_buff.length - 1; i++) {
-		end_buff = end_buff + tab_buff[i] + ",";
-	}
-	end_buff = end_buff + tab_buff[tab_buff.length -1];
+	selectWindow("imgDup");
+	close();
 	
-	
-
-	File.append(end_buff, outputPathCSV);
-	File.append(outputRes, outputPath);
-	
-
-	////mitosoxCalculation();
+	return newArray(arrEnd,total);
 }
 
-//----------------------------------------- mitosox calculation
-function mitosoxCalculation() {
-	selectWindow("MAX_mitosox");
-	run("8-bit");
-	run("Set Scale...", "distance=0 known=0 unit=pixel");
-	//run("Set Scale...", "distance=0 known=0 unit=pixel");
-	//run("Median...", "radius=3 stack");
-	s=findMaxiOnStack(p);
-	print("Mitosox signals number="+s);
-	rename("mitosox-stack");
-	findMaxiOnStack_VisualControl("mitosox-stack",p);
-	run("Tile");
-}
-
-//---------------------------------------------Functions
+/** COMPTAGE par TAILLE
+ * 
+ */
 function CountNucleisAreaLessThan(image,a){
 //run stardist  "versatile" 
 //scan segmented particles and count those above area : "a" 
 //draw on averlay a white dot for control
+//return the number of object counted
 	selectWindow(image);
 	//get "Label Image" image
 	getMinAndMax(min, max);
-	
-	n=0;
-	
+	number=0;
 	for (i = 1; i <= max; i++) {
 		selectWindow(image);
 		setThreshold(i, i);
 		run("Measure");
 	    area=getResult("Area",i-1);	    
 	    if(area>=a)
-	    	n++;
+	    	number++;
 	    //Table.deleteRows(nResults-1,nResults-1);
 		//updateResults();
-	    	
-		}
-	return n;
 	}
+	return number;
+}
 
-//----------------------------------------------------------
-function CountNucleisAreaLessThan_control(image,k,a){
+/** RECUPERATION des POSITIONS
+ * 
+ */
+function CountNucleis_control(image,k,a){
 //need a stack and a Results tab
-//k is slice number, a is min area , image is image where cross are drawed in overlay
+//a is min area , image is image where cross are drawed in overlay
 	selectWindow(image);
 	
-	if(!isOpen("Results"))
-		exit("Results tab is need !");
-		
-	if(nSlices<1)
-		exit("Stack is needed !");
- // <= ou < simple
-			    
-	setSlice(k);
+	if(!isOpen("Results")) 	exit("Results tab is need !");
+	if(nSlices<1)			exit("Stack is needed !" + fichier);
+	
 	n=nResults;
+	
+	selectWindow("Results");
+	Table.sort("Area");
+	
+	//ci dessous la suppression des objets trop petits
 	p=0;
-	for (i = 0; i < n; i++) {
+	areaStart=0;
+	for (i = 0; i < n && areaStart==0; i++) {
     	if( (getResult("Area", i)>=a) ){
-    		    x = floor(getResult('X', i));
-    			y = floor(getResult("Y", i));
-    			makePoint(x,y,"small white add");//draw
-    			p++;
-    		}
+		    areaStart=i;
+    	}
 	}
 	
+	Table.deleteRows(0, areaStart-1);
+	
+	n=nResults;
+	ptX = newArray(n);
+	ptY = newArray(n);
+	
+	for (i = 0; i < n; i++) {
+	    x = floor(getResult('X', i));
+		y = floor(getResult("Y", i));
+		//makePoint(x,y,"small white add");//draw // ne pas activer sinon bug
+		ptX[i]=x;
+		ptY[i]=y;
+		p++;
+	}
+	
+	arrEnd = creationTable(ptX,ptY,k);
+	
+	return arrEnd;
 }
 
-//---------------------------------------------------------
-function findMaxiOnStack(p){
-//find Maxima on in focus stack
-//return the sum for all images in stack
-//p=prominence
-run("Options...", "iterations=5 count=1 black");
-n=nSlices;
-s=0;
-for(i=1;i<=n;i++){
-	setSlice(i);
-	run("Find Maxima...", "prominence="+p+" output=Count");
-	s=s+getResult("Count");	
-	}
-if(isOpen("Results")){
-	selectWindow("Results");
+/** CREATION de la TABLE des POSITIONS
+ * > récupère les positions des différentes projections pour les ranger dans la meme table
+ */
+function creationTable(ptX,ptY,k) {
+
+	Table.create("tabXY"+k);
+	Table.setColumn("X",ptX);
+	Table.setColumn("Y",ptY);
+	Table.sort("Y");
+	Table.sort("X");
+	
+	arrEnd = nResults;
+	
+	arrX = Table.getColumn("X");
+	arrY = Table.getColumn("Y");
+	
+	selectWindow("tabXY"+k);
 	run("Close");
-	}
-return s;
+	selectWindow("tabXY");
+	
+	Table.setColumn("X"+k, arrX);
+	Table.setColumn("Y"+k, arrY);
+	
+	return arrEnd;
 }
 
-//---------------------------------------------------------------------------------
-function findMaxiOnStack_VisualControl(image,p){
-//make a visual result of max count on original stack :"image"
-	run("Options...", "iterations=5 count=1 black");
-	selectWindow(image);
-	n=nSlices;
-
-	for(i=1;i<=n;i++){
-		setSlice(i);
-		run("Find Maxima...", "prominence="+p+" output=[Single Points]");
-		run("Options...", "iterations=5 count=1 black do=Dilate");
-		rename("output");
-		selectWindow(image);
-		
-		run("Add Image...", "image=output x=0 y=0 opacity=100 zero");
-		selectWindow("output");
-		close();
+/** ELIMINATION des REDONDANCES
+ * > boucle sur le tableau des positions en fonction de Xi 
+ * > vérifie les proximités des points des différentes projections, appel à dist() 
+ * 
+ */
+function correction(first,second,marge) {
+	
+	selectWindow("tabXY");
+	cor = 0;
+	bot = 0;
+	end = arrSize[second];
+	for (i = 0; i < arrSize[first]; i++) {
+		x1 = Table.get("X"+first, i);
+		y1 = Table.get("Y"+first, i);
+		top = true;
+		for(j = bot; j < end && top; j++){
+			x2 = Table.get("X"+second, j);
+			y2 = Table.get("Y"+second, j);
+			d = dist(x1,y1,x2,y2,marge);
+			if(d<=marge) cor++;
+		}
 	}
+	return cor;	
 }
 
+/** CALCUL de la DISTANCE
+ * 
+ */
+function dist(x1,y1,x2,y2,marge) {
+	return sqrt(pow(x1-x2,2)+pow(y1-y2,2));
+}
