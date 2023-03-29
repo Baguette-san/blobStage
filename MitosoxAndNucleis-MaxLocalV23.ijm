@@ -47,6 +47,7 @@ function launch(){
 	lifToTiff = Dialog.getCheckbox();
 	tifToCount = Dialog.getCheckbox();
 	
+	startTime = getTime();
 	
 	if(lifToTiff){
 		lif_dir = getDirectory("Select the directory where .lif files are stored ");
@@ -71,18 +72,27 @@ function launch(){
 		forAllTiff(tif_dir);
 	}
 
-	print("success main");
+	endTime = getTime();
+	
+	totalTime = endTime - startTime;
+	totalSeconds = totalTime / 1000;
+	hours = totalSeconds / 3600;
+	minutes = (totalSeconds % 3600) / 60;
+	seconds = totalSeconds % 60;
+	print("Fin du programme en : " + round(hours) + " h " + round(minutes) + " min " + round(seconds) + " s ");
+}
 }
 
 /** CONVERTION LIF > TIFF 
  * > récuperation de la liste des fichiers du répertoire des .lif
  * > boucle sur la liste, si le fichier est un .lif -> appel à gestionFichier()
  */
-function forAllLif(lif_dir,tif_dir) { 
-	file_list = getFileList(lif_dir);
-	for (i=0; i<file_list.length; i++) {
-		if (endsWith(file_list[i], ".lif")){
-			gestionFichiers(lif_dir,file_list[i],tif_dir);
+function forAllLif(lif_dir, tif_dir) {
+	
+	LIF_file_list = getFileList(lif_dir);
+	for (i=0; i<LIF_file_list.length; i++) { 
+		if (endsWith(LIF_file_list[i], ".lif")){
+			gestionFichiers(lif_dir, LIF_file_list[i], tif_dir);
 			close("*");
 		}
 	}
@@ -93,33 +103,31 @@ function forAllLif(lif_dir,tif_dir) {
  * > préparation
  * > boucle pour récupérer tous les .tif
  */
-function gestionFichiers(lif_dir,file_name,outPath) {
-	filePath = lif_dir + file_name;
-
+function gestionFichiers(lif_dir, LIF_file_name, outPath) {
+	
+	filePath = lif_dir + LIF_file_name;
+	
 	run("Bio-Formats Macro Extensions");
 	Ext.setId(filePath);
 	Ext.getCurrentFile(file);
 	Ext.getSeriesCount(serieCount);
-	print("count = " + serieCount);
-	
 	tif_names = newArray(serieCount);
 
-	for (s=0; s<serieCount; ) {
+	for (s=0; s<serieCount; s++) {
 		Ext.setSeries(s);
-		tif_names[s] = ""; 
+		tif_names[s] = "";
 		Ext.getSeriesName(tif_names[s]);
-		file_name2 = tif_names[s]+".tif";
-		print(file_name2);
-		
-		s++;
-		// Bio-Formats Importer uses an argument that can be built by concatenate a set of strings
-		run("Bio-Formats Importer", "open=&filePath autoscale color_mode=Default view=Hyperstack stack_order=XYCZT series_"+s);
-		file_name = replace(file_name,".lif"," - ");//tiff name differentiation
-		file_name2 = replace(file_name2, "/", "_");
-		saveAs("Tiff",outPath+file_name+file_name2);
-	}
+		file_name2 = tif_names[s] + ".tif";
 	
+		// Bio-Formats Importer uses an argument that can be built by concatenate a set of strings
+		run("Bio-Formats Importer", "open=&filePath autoscale color_mode=Default view=Hyperstack stack_order=XYCZT series_"+ (s+1));
+		LIF_file_name = replace(LIF_file_name,".lif"," - ");
+		file_name2 = replace(file_name2, "/", "_");
+		saveAs("Tiff",outPath + LIF_file_name + file_name2);
+		//close();
+	}
 }
+
 
 /** PARAMETRAGE
  * > choix des paramètres : aire minimale de prise en compte, taille du noyau attendue
@@ -136,6 +144,7 @@ function GUI() {
 
 	return newArray(aire, diameter);	
 }
+
 
 /** GENERALISATION DU TRAITEMENT
  * récuperation de la liste des fichiers du répertoire des .tif
