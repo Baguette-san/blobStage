@@ -53,7 +53,7 @@ function launch(){
 		lif_dir = getDirectory("Select the directory where .lif files are stored ");
 		tif_dir = getDirectory("Select the directory where will be stored .tif files ...");
 		
-		setBatchMode(true);
+		setBatchMode(false);
 		forAllLif(lif_dir,tif_dir);
 	}
 	if(tifToCount){
@@ -68,7 +68,7 @@ function launch(){
 		ret_arr = GUI();
 		aire = ret_arr[0];
 		diameter = ret_arr[1];
-		setBatchMode(false);
+		setBatchMode(true);
 		forAllTiff(tif_dir);
 	}
 
@@ -81,7 +81,7 @@ function launch(){
 	seconds = totalSeconds % 60;
 	print("Fin du programme en : " + round(hours) + " h " + round(minutes) + " min " + round(seconds) + " s ");
 }
-}
+
 
 /** CONVERTION LIF > TIFF 
  * > récuperation de la liste des fichiers du répertoire des .lif
@@ -161,7 +161,7 @@ function forAllTiff(tif_dir) {
 			//close("*");
 		}
 	}
-}
+} // --> launch
 
 /** OUVETURE du FICHIER
  * relica d'une autre architecture à conserver pour la lisibilité sinon incorporer à splitProjection()
@@ -175,7 +175,7 @@ function ouverture(filepath){
 	
 	selectWindow("ROI Manager");
 	run("Close");
-}
+} // --> forAllTiff
 
 /** PREPARATION des PROJECTIONS
  * > récupération des détails du fichier
@@ -214,7 +214,7 @@ function splitProjections(name){
 		run("Z Project...","start=" + i*nucleusSlices + " stop=" + ((i+1)*nucleusSlices)-1 + " projection=[Median]");
 		rename("p"+i);
 		
-		measureRes = measurement(i);
+		measureRes = measurement(i);			// measurement
 		arrSize[i] = measureRes[0];
 		totalNotCorr+=measureRes[1];
 		//print("total proj = " + measureRes[1]);
@@ -249,7 +249,7 @@ function splitProjections(name){
 	//print(csvString);
 	//print(outputPathCSV);
 	File.append(csvString, outputPathCSV);
-}
+} // --> ouverture
 
 /** PREPARATION de l'IMAGE et LANCEMENT du COMPTAGE et de la CORRECTION
  * > préparation des mesures
@@ -275,7 +275,6 @@ function measurement(k) {
 	run("Set Scale...", "distance=0 known=0 unit=pixel");
 
 	total=0; //variable de compte des objets
-	
 	run("Duplicate...", "title=imgDup");
 	run("Command From Macro", "command=[de.csbdresden.stardist.StarDist2D], args=['input':'imgDup', 'modelChoice':'Versatile (fluorescent nuclei)', 'normalizeInput':'true', 'percentileBottom':'72.7', 'percentileTop':'98.4', 'probThresh':'0.5', 'nmsThresh':'0.4', 'outputType':'Both', 'modelFile':'C:\\\\Users\\\\crouvier\\\\Downloads\\\\3d-unet---arabidopsis---zerocostdl4mic_tensorflow_saved_model_bundle\\\\TF_SavedModel.zip', 'nTiles':'1', 'excludeBoundary':'2', 'roiPosition':'Automatic', 'verbose':'true', 'showCsbdeepProgress':'false', 'showProbAndDist':'false'], process=[false]");
 	rename("labels");

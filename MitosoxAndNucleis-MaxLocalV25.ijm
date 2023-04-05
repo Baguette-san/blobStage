@@ -1,4 +1,8 @@
 //06/07/2022
+//ver 2.5
+//mitochondria are counted too
+//ver 2.4
+//run time is counted and some optimisation has been brought
 //ver 2.3
 //the nucleis count is now ajust by a centroid proximity function to suppress two time's counted nucleis 
 //ver 2.2 
@@ -53,21 +57,21 @@ function launch(){
 		lif_dir = getDirectory("Select the directory where .lif files are stored ");
 		tif_dir = getDirectory("Select the directory where will be stored .tif files ...");
 		
-		setBatchMode(true);
+		setBatchMode(false);
 		forAllLif(lif_dir,tif_dir);
 	}
 	if(tifToCount){
-		if(!lifToTiff){
+		if(!lifToTiff) 
 			tif_dir = getDirectory("Select the directory where .tif files are stored ...");
-		}
 		
 		//outputPath=File.openDialog("Select output file ..."); //test
 		outputPathCSV = File.openDialog("Select output CSV file ...");
-		File.append("name,unit,pixelW,pixelH,pixelZ,width,height,channels,frames,slices,aire,diameter,marge,totalThick,nucleusSlices,totalPlainNucleus,slicesLeft,totalNotCorr,corrTotale", outputPathCSV);
+		File.append("name,unit,pixelW,pixelH,pixelZ,width,height,channels,frames,slices,nucleus_area,diameter,marge,totalThick,nucleusSlices,totalPlainNucleus,slicesLeft,totalNucNotCorr,totalMitoNotCorr,corrTotaleNuc", outputPathCSV);
 		
 		ret_arr = GUI();
-		aire = ret_arr[0];
-		diameter = ret_arr[1];
+		nucleus_area = ret_arr[0];
+		mito_area = ret_arr[1];
+		diameter = ret_arr[2];
 		setBatchMode(false);
 		forAllTiff(tif_dir);
 	}
@@ -81,7 +85,7 @@ function launch(){
 	seconds = totalSeconds % 60;
 	print("Fin du programme en : " + round(hours) + " h " + round(minutes) + " min " + round(seconds) + " s ");
 }
-}
+
 
 /** CONVERTION LIF > TIFF 
  * > récuperation de la liste des fichiers du répertoire des .lif
@@ -130,19 +134,21 @@ function gestionFichiers(lif_dir, LIF_file_name, outPath) {
 
 
 /** PARAMETRAGE
- * > choix des paramètres : aire minimale de prise en compte, taille du noyau attendue
+ * > choix des paramètres : nucleus_area minimale de prise en compte, taille du noyau attendue
  * (propre au projet) taille du noyau par défaut à trois pour être sensiblement en deça des tailles observées
  */
 function GUI() { 
 	Dialog.create("Parameters ajusting");
 	Dialog.addNumber("Nucleis's Area above (pixels) will be counted :", 1100);
+	Dialog.addNumber("Mitochondria's Area under (pixels) will be counted :", 200);
 	Dialog.addNumber("Size of nucleis (µm)", 3); 
 	Dialog.show();
 	
-	aire=Dialog.getNumber();
+	nucleus_area = Dialog.getNumber();
+	mito_area = Dialog.getNumber();
 	diameter = Dialog.getNumber();
 
-	return newArray(aire, diameter);	
+	return newArray(nucleus_area, mito_area, diameter);	
 }
 
 
@@ -151,31 +157,35 @@ function GUI() {
  * boucle sur la liste, si le fichier est un .Tif -> appel à ouverture()
  */
 function forAllTiff(tif_dir) {
+	
 	file_list = getFileList(tif_dir);
+	
 	for (i=0; i < file_list.length; i++) {
+		
 		if (endsWith(file_list[i], ".tif")){
+			
 			fichier = file_list[i];
-			info_table = newArray(fichier,aire,diameter);
+			info_table = newArray(fichier,nucleus_area,diameter);
 			file_path = tif_dir + fichier;
-			ouverture(file_path);
+			
+			ouverture(file_path); // --> ouverture
 			//close("*");
 		}
 	}
-}
+} // --> launch
 
 /** OUVETURE du FICHIER
- * relica d'une autre architecture à conserver pour la lisibilité sinon incorporer à splitProjection()
+ * relica d'une autre architecture à conserver pour la lisibilité sinon incorporer à splitProjections()
  */
 function ouverture(filepath){
 	open(file_path);
 	dir = File.getParent(fichier);
 	name = File.getName(fichier);
 	
-	splitProjections(name);
+	splitProjections(name); // --> splitProjections
 	
-	selectWindow("ROI Manager");
-	run("Close");
-}
+	selectWindow("ROI Manager"); run("Close");
+} // --> forAllTiff
 
 /** PREPARATION des PROJECTIONS
  * > récupération des détails du fichier
@@ -192,56 +202,60 @@ function splitProjections(name){
 	
 	if((unit=="pixels")||(unit=="pixel"))	exit("pixel size is not scaled !");
 	
+	run("Duplicate...", "title=nucleis duplicate channels=2");
+	run("Gaussian Blur 3D...", "x=3 y=3 z=1"); // Christian préferait une valeur de 3,3,3
+	
+	// TODO insérer ici la duplication du rouge
+	 
+	selectWindow(name); close();
+	
 	totalThick = slices*pixelZ; //en µm
 	nucleusSlices = floor(diameter/pixelZ); //(nombre de tranches par projection)
+	if(nucleusSlices%2==1){ // on cherche à ce que le nb de tranche par projection soit pair
+		nucleusSlices+=1;
+	}
 	totalPlainNucleus = floor(slices/nucleusSlices); //nombre de projection(s)
 	slicesLeft = slices%nucleusSlices;
+	mitoSlices = nucleusSlices/2;
 	
 	//print("totalPlainNuleus="+totalPlainNucleus+" , nucleusSlices=" + nucleusSlices + " , slicesLeft="+slicesLeft);
 	
-	run("Duplicate...", "title=nucleis duplicate channels=2");
-	run("Gaussian Blur 3D...", "x=2 y=2 z=2"); // Christian préferait une valeur de 3,3,3
-	selectWindow(name);
-	close();
-	
 	Table.create("tabXY");
-	arrSize = newArray(totalPlainNucleus);
-	totalNotCorr = 0;
+	arrSize = newArray(totalPlainNucleus);	// tableau de taille *nombe de projection* pour le nombre de noyau par projection
+	totalNotCorr = 0;						// nombre total avant correction
 	
 	//toutes les projections sont traitées avant correction
 	for (i = 0; i < totalPlainNucleus; i++) {
 		selectWindow("nucleis");
-		run("Z Project...","start=" + i*nucleusSlices + " stop=" + ((i+1)*nucleusSlices)-1 + " projection=[Median]");
+		run("Z Project...","start=" + (i*nucleusSlices)+1 + " stop=" + (i+1)*nucleusSlices + " projection=[Max Intensity]");
 		rename("p"+i);
 		
-		measureRes = measurement(i);
-		arrSize[i] = measureRes[0];
-		totalNotCorr+=measureRes[1];
-		//print("total proj = " + measureRes[1]);
+		measureRes = measurement(i);			// --> measurement
 		
-		selectWindow("p"+i);
-		close();
+		arrSize[i] = measureRes[0];
+		totalNucNotCorr+=measureRes[1];
+		totalMitoNotCorr+=measureRes[2];
+		
+		selectWindow("p"+i); close();			// fermeture projection bleu
 	}
 	
-	selectWindow("nucleis");
-	close();
+	selectWindow("nucleis"); close();
 	
-	corrTotale = 0; // variable de correction
+	corrTotaleNuc = 0; 							// variable de correction
 	
-	marge = floor((diameter/pixelZ)/10); // traitement de la marge sujet à modification pour ajuster la precision de la correction
+	marge = floor((diameter/pixelZ)/10); 		// traitement de la marge sujet à modification pour ajuster la precision de la correction
 	
 	if(totalPlainNucleus>1){
+		// TODO ajouter le control des mitochondries
 		for (i = 0; i < totalPlainNucleus-1; i++) {
 			c = correction(i,i+1,marge);
-			corrTotale += c;
-			//print("cor = " + c);
+			corrTotaleNuc += c;
 		}
 	}
 	
-	selectWindow("tabXY");
-	run("Close");
+	selectWindow("tabXY"); run("Close");
 	
-	csvArray = newArray(name,unit,pixelW,pixelH,pixelZ,width,height,channels,frames,slices,aire,diameter,marge,totalThick,nucleusSlices,totalPlainNucleus,slicesLeft,totalNotCorr,corrTotale);
+	csvArray = newArray(name,unit,pixelW,pixelH,pixelZ,width,height,channels,frames,slices,nucleus_area,diameter,marge,totalThick,nucleusSlices,totalPlainNucleus,slicesLeft,totalNucNotCorr,totalMitoNotCorr,corrTotaleNuc);
 	csvString = "";
 	
 	for (i = 0; i < csvArray.length-1; i++) csvString = csvString + csvArray[i] + "," ;
@@ -249,7 +263,7 @@ function splitProjections(name){
 	//print(csvString);
 	//print(outputPathCSV);
 	File.append(csvString, outputPathCSV);
-}
+} // --> ouverture
 
 /** PREPARATION de l'IMAGE et LANCEMENT du COMPTAGE et de la CORRECTION
  * > préparation des mesures
@@ -262,66 +276,62 @@ function measurement(k) {
 	run("Set Measurements...", "area centroid limit redirect=None decimal=3");
 	//clean
 	if(isOpen("Results")){
-		selectWindow("Results");
-		run("Close");
+		selectWindow("Results"); run("Close");
 	}
 	if(isOpen("ROI Manager")){
-		selectWindow("ROI Manager");
-		run("Close");
+		selectWindow("ROI Manager"); run("Close");
 	}
 	
 	selectWindow("p"+k);
 	run("8-bit");
 	run("Set Scale...", "distance=0 known=0 unit=pixel");
 
-	total=0; //variable de compte des objets
-	
+	total_nuc=0; //variable de compte des objets
+	total_mito=0;
 	run("Duplicate...", "title=imgDup");
 	run("Command From Macro", "command=[de.csbdresden.stardist.StarDist2D], args=['input':'imgDup', 'modelChoice':'Versatile (fluorescent nuclei)', 'normalizeInput':'true', 'percentileBottom':'72.7', 'percentileTop':'98.4', 'probThresh':'0.5', 'nmsThresh':'0.4', 'outputType':'Both', 'modelFile':'C:\\\\Users\\\\crouvier\\\\Downloads\\\\3d-unet---arabidopsis---zerocostdl4mic_tensorflow_saved_model_bundle\\\\TF_SavedModel.zip', 'nTiles':'1', 'excludeBoundary':'2', 'roiPosition':'Automatic', 'verbose':'true', 'showCsbdeepProgress':'false', 'showProbAndDist':'false'], process=[false]");
 	rename("labels");
 	
-	s=CountNucleisAreaLessThan("labels",aire);
-	total=total+s;
+	numbers = CountNucleisAreaLessThan("labels");			// --> CountNucleisAreaLessThan
+	total_nuc = total_nuc+numbers[0];
+	total_mito = total_mito+numbers[1];
 	
-	selectWindow("labels");
-	close();
+	selectWindow("labels"); close();
 	
-	arrEnd = CountNucleis_control("p"+k,k,aire);
-	//IJ.renameResults("Results"+"_"+k);  //for test
+	arrEnd = CountNucleis_control("p"+k,k,nucleus_area);	// --> CountNucleis_control
 	
 	if(isOpen("Results")){
-		selectWindow("Results");
-		run("Close");
+		selectWindow("Results"); run("Close");
 	}
-	selectWindow("imgDup");
-	close();
+	selectWindow("imgDup"); close();
 	
-	return newArray(arrEnd,total);
+	return newArray(arrEnd,total_nuc,total_mito); 			// --> splitProjections
 }
 
 /** COMPTAGE par TAILLE
  * 
  */
-function CountNucleisAreaLessThan(image,a){
+function CountNucleisAreaLessThan(image){
 //run stardist  "versatile" 
-//scan segmented particles and count those above area : "a" 
+//scan segmented particles and count those above area : "obj_area" 
 //draw on averlay a white dot for control
 //return the number of object counted
 	selectWindow(image);
 	//get "Label Image" image
 	getMinAndMax(min, max);
-	number=0;
-	for (i = 1; i <= max; i++) {
+	nuc_number=0;
+	mito_number=0;
+	for (i = min; i <= max; i++) {
 		selectWindow(image);
 		setThreshold(i, i);
 		run("Measure");
-	    area=getResult("Area",i-1);	    
-	    if(area>=a)
-	    	number++;
+	    obj_area=getResult("Area",i-1);	    
+	    if(obj_area>=nucleus_area)	nuc_number++;
+	    else { if(obj_area>=100 && obj_area<=mito_area)	mito_number++; }
 	    //Table.deleteRows(nResults-1,nResults-1);
 		//updateResults();
 	}
-	return number;
+	return newArray(nuc_number,mito_number);
 }
 
 /** RECUPERATION des POSITIONS
@@ -336,63 +346,51 @@ function CountNucleis_control(image,k,a){
 	if(nSlices<1)			exit("Stack is needed !" + fichier);
 	
 	n=nResults;
-	
 	selectWindow("Results");
 	Table.sort("Area");
 	
-	//ci dessous la suppression des objets trop petits
-	p=0;
+	//suppression des objets trop petits
 	areaStart=0;
 	for (i = 0; i < n && areaStart==0; i++) {
-    	if( (getResult("Area", i)>=a) ){
-		    areaStart=i;
-    	}
+    	if((getResult("Area", i)>=nucleus_area)) areaStart=i;
 	}
-	
 	Table.deleteRows(0, areaStart-1);
-	
 	n=nResults;
 	ptX = newArray(n);
 	ptY = newArray(n);
-	
 	for (i = 0; i < n; i++) {
 	    x = floor(getResult('X', i));
 		y = floor(getResult("Y", i));
-		//makePoint(x,y,"small white add");//draw // ne pas activer sinon bug
 		ptX[i]=x;
 		ptY[i]=y;
-		p++;
 	}
+	arrEnd = creationTable(ptX,ptY,k,n);	// --> creationTable
 	
-	arrEnd = creationTable(ptX,ptY,k);
-	
-	return arrEnd;
+	return arrEnd;						// --> measurement
 }
 
 /** CREATION de la TABLE des POSITIONS
  * > récupère les positions des différentes projections pour les ranger dans la meme table
  */
-function creationTable(ptX,ptY,k) {
-
+function creationTable(ptX,ptY,k,n) {
+	arrEnd = n;
+	// partie récupération des coordonnées pour les trier
 	Table.create("tabXY"+k);
 	Table.setColumn("X",ptX);
 	Table.setColumn("Y",ptY);
 	Table.sort("Y");
 	Table.sort("X");
 	
-	arrEnd = nResults;
-	
 	arrX = Table.getColumn("X");
 	arrY = Table.getColumn("Y");
 	
-	selectWindow("tabXY"+k);
-	run("Close");
+	selectWindow("tabXY"+k); run("Close"); 
 	selectWindow("tabXY");
 	
 	Table.setColumn("X"+k, arrX);
 	Table.setColumn("Y"+k, arrY);
 	
-	return arrEnd;
+	return arrEnd;					// --> CountNucleis_control
 }
 
 /** ELIMINATION des REDONDANCES
@@ -403,9 +401,9 @@ function creationTable(ptX,ptY,k) {
 function correction(first,second,marge) {
 	
 	selectWindow("tabXY");
-	cor = 0;
-	bot = 0;
+	cor = 0; bot = 0;
 	end = arrSize[second];
+	
 	for (i = 0; i < arrSize[first]; i++) {
 		x1 = Table.get("X"+first, i);
 		y1 = Table.get("Y"+first, i);
@@ -413,16 +411,10 @@ function correction(first,second,marge) {
 		for(j = bot; j < end && top; j++){
 			x2 = Table.get("X"+second, j);
 			y2 = Table.get("Y"+second, j);
-			d = dist(x1,y1,x2,y2,marge);
+			d = sqrt(pow(x1-x2,2)+pow(y1-y2,2));
 			if(d<=marge) cor++;
 		}
 	}
-	return cor;	
-}
-
-/** CALCUL de la DISTANCE
- * 
- */
-function dist(x1,y1,x2,y2,marge) {
-	return sqrt(pow(x1-x2,2)+pow(y1-y2,2));
+	
+	return cor;								// --> splitProjection
 }
