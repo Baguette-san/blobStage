@@ -227,7 +227,9 @@ function splitProjections(name){
 	
 	Table.create("tabXY");
 	arrSize = newArray(totalPlainNucleus);	// tableau de taille *nombe de projection* pour le nombre de noyau par projection
-	totalNotCorr = 0;						// nombre total avant correction
+	//totalNotCorr = 0;						// nombre total avant correction
+	totalNucNotCorr = 0;
+	totalMitoNotCorr = 0;
 	
 	//toutes les projections sont traitées avant correction
 	for (i = 0; i < totalPlainNucleus; i++) {
