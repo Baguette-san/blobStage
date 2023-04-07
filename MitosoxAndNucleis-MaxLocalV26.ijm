@@ -68,7 +68,7 @@ function launch(){
 		
 		//outputPath=File.openDialog("Select output file ..."); //test
 		outputPathCSV = File.openDialog("Select output CSV file ...");
-		File.append("name,unit,pixelW,pixelH,pixelZ,width,height,channels,frames,slices,nucleus_area,diameter,marge,totalThick,nucleusSlices,totalPlainNucleus,slicesLeft,totalNucNotCorr,totalMitoNotCorr,corrTotaleNuc", outputPathCSV);
+		File.append("name;unit;pixelW;pixelH;pixelZ;width;height;channels;frames;slices;nucleus_area;diameter;marge;totalThick;nucleusSlices;totalPlainNucleus;slicesLeft;totalNucNotCorr;totalMitoNotCorr;corrTotaleNuc", outputPathCSV);
 		
 		ret_arr = GUI();
 		nucleus_area = ret_arr[0];
@@ -85,7 +85,10 @@ function launch(){
 	hours = totalSeconds / 3600;
 	minutes = (totalSeconds % 3600) / 60;
 	seconds = totalSeconds % 60;
-	print("Fin du programme en : " + round(hours) + " h " + round(minutes) + " min " + round(seconds) + " s ");
+	temps = "Fin du programme en : " + round(hours) + " h " + round(minutes) + " min " + round(seconds) + " s ";
+	print(temps);
+	File.append("", outputPathCSV);
+	File.append(temps, outputPathCSV);
 }
 
 
@@ -260,7 +263,7 @@ function splitProjections(name){
 	csvArray = newArray(name,unit,pixelW,pixelH,pixelZ,width,height,channels,frames,slices,nucleus_area,diameter,marge,totalThick,nucleusSlices,totalPlainNucleus,slicesLeft,totalNucNotCorr,totalMitoNotCorr,corrTotaleNuc);
 	csvString = "";
 	
-	for (i = 0; i < csvArray.length-1; i++) csvString = csvString + csvArray[i] + "," ;
+	for (i = 0; i < csvArray.length-1; i++) csvString = csvString + csvArray[i] + ";" ;
 	csvString = csvString + csvArray[csvArray.length-1];
 	//print(csvString);
 	//print(outputPathCSV);
