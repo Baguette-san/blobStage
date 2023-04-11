@@ -262,6 +262,9 @@ function splitProjections(name){
 		run("Z Project...","start=" + (i*nucleusSlices)+1 + " stop=" + (i+1)*nucleusSlices + " projection=[Max Intensity]");
 		rename("p"+i);
 		redMeasure = MeasurementRed(i);			// --> measurement
+		treshold = redMeasure[0];
+		beyondTh = redMeasure[1];
+		sumPxInt = redMeasure[2];
 		runClose("p"+i,0);						// fermeture projection rouge
 	}
 	runClose("tabXY",1);
