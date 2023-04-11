@@ -214,9 +214,7 @@ function splitProjections(name){
 	
 	run("Gaussian Blur 3D...", "x=3 y=3 z=2"); // Christian préferait une valeur de 3,3,3
 	
-	// TODO insérer ici la duplication du rouge
 	runClose(name,0);
-	selectWindow("blue");
 	
 	totalThick = slices*pixelZ; //en µm
 	nucleusSlices = floor(diameter/pixelZ); 	//(nombre de tranches par projection)
