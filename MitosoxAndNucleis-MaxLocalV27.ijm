@@ -1,8 +1,10 @@
-//06/07/2022
+//ver 2.7
+// attempt to parallise
 //ver 2.6
 //measurement of ROS
 //ver 2.5
 //mitochondria are counted too
+//06/07/2022
 //ver 2.4
 //run time is counted and some optimisation has been brought
 //ver 2.3
@@ -68,7 +70,7 @@ function launch(){
 		
 		//outputPath=File.openDialog("Select output file ..."); //test
 		outputPathCSV = File.openDialog("Select output CSV file ...");
-		File.append("name;unit;pixelW;pixelH;pixelZ;width;height;channels;frames;slices;nucleus_area;diameter;marge;totalThick;nucleusSlices;totalPlainNucleus;slicesLeft;totalNucNotCorr;totalMitoNotCorr;corrTotaleNuc", outputPathCSV);
+		File.append("name;unit;pixelW;pixelH;pixelZ;width;height;channels;frames;slices;nucleus_area;diameter;marge;totalThick;nucleusSlices;totalPlainNucleus;slicesLeft;totalNucNotCorr;totalMitoNotCorr;corrTotaleNuc;treshold;beyondTh;sumPxInt", outputPathCSV);
 		
 		ret_arr = GUI();
 		nucleus_area = ret_arr[0];
@@ -87,8 +89,7 @@ function launch(){
 	seconds = totalSeconds % 60;
 	temps = "Fin du programme en : " + round(hours) + " h " + round(minutes) + " min " + round(seconds) + " s ";
 	print(temps);
-	File.append("", outputPathCSV);
-	File.append(temps, outputPathCSV);
+	File.append(temps,outputPathCSV);
 }
 
 
@@ -189,7 +190,7 @@ function ouverture(filepath){
 	
 	splitProjections(name); // --> splitProjections
 	
-	selectWindow("ROI Manager"); run("Close");
+	runClose("ROI Manager",1);
 } // --> forAllTiff
 
 /** PREPARATION des PROJECTIONS
@@ -207,18 +208,19 @@ function splitProjections(name){
 	
 	if((unit=="pixels")||(unit=="pixel"))	exit("pixel size is not scaled !");
 	
-	run("Duplicate...", "title=nucleis duplicate channels=2");
-	run("Gaussian Blur 3D...", "x=3 y=3 z=1"); // Christian préferait une valeur de 3,3,3
+	run("Duplicate...", "title=red duplicate channels=1");
+	selectWindow(name);
+	run("Duplicate...", "title=blue duplicate channels=2");
+	
+	run("Gaussian Blur 3D...", "x=3 y=3 z=2"); // Christian préferait une valeur de 3,3,3
 	
 	// TODO insérer ici la duplication du rouge
-	 
-	selectWindow(name); close();
+	runClose(name,0);
+	selectWindow("blue");
 	
 	totalThick = slices*pixelZ; //en µm
-	nucleusSlices = floor(diameter/pixelZ); //(nombre de tranches par projection)
-	if(nucleusSlices%2==1){ // on cherche à ce que le nb de tranche par projection soit pair
-		nucleusSlices+=1;
-	}
+	nucleusSlices = floor(diameter/pixelZ); 	//(nombre de tranches par projection)
+	if(nucleusSlices%2==1) nucleusSlices+=1;	// -> projection paire
 	totalPlainNucleus = floor(slices/nucleusSlices); //nombre de projection(s)
 	slicesLeft = slices%nucleusSlices;
 	mitoSlices = nucleusSlices/2;
@@ -227,29 +229,24 @@ function splitProjections(name){
 	
 	Table.create("tabXY");
 	arrSize = newArray(totalPlainNucleus);	// tableau de taille *nombe de projection* pour le nombre de noyau par projection
-	//totalNotCorr = 0;						// nombre total avant correction
+	totalNotCorr = 0;						// nombre total avant correction
 	totalNucNotCorr = 0;
 	totalMitoNotCorr = 0;
 	
 	//toutes les projections sont traitées avant correction
 	for (i = 0; i < totalPlainNucleus; i++) {
-		selectWindow("nucleis");
+		selectWindow("blue");
 		run("Z Project...","start=" + (i*nucleusSlices)+1 + " stop=" + (i+1)*nucleusSlices + " projection=[Max Intensity]");
 		rename("p"+i);
-		
-		measureRes = measurement(i);			// --> measurement
-		
+		measureRes = measurementBlue(i);		// --> measurement
 		arrSize[i] = measureRes[0];
 		totalNucNotCorr+=measureRes[1];
 		totalMitoNotCorr+=measureRes[2];
-		
-		selectWindow("p"+i); close();			// fermeture projection bleu
+		runClose("p"+i,0);						// fermeture projection bleu
 	}
-	
-	selectWindow("nucleis"); close();
+	runClose("blue",0);
 	
 	corrTotaleNuc = 0; 							// variable de correction
-	
 	marge = floor((diameter/pixelZ)/10); 		// traitement de la marge sujet à modification pour ajuster la precision de la correction
 	
 	if(totalPlainNucleus>1){
@@ -260,9 +257,16 @@ function splitProjections(name){
 		}
 	}
 	
-	selectWindow("tabXY"); run("Close");
+	for (i = 0; i < totalPlainNucleus; i++) {
+		selectWindow("red");
+		run("Z Project...","start=" + (i*nucleusSlices)+1 + " stop=" + (i+1)*nucleusSlices + " projection=[Max Intensity]");
+		rename("p"+i);
+		redMeasure = MeasurementRed(i);			// --> measurement
+		runClose("p"+i,0);						// fermeture projection rouge
+	}
+	runClose("tabXY",1);
 	
-	csvArray = newArray(name,unit,pixelW,pixelH,pixelZ,width,height,channels,frames,slices,nucleus_area,diameter,marge,totalThick,nucleusSlices,totalPlainNucleus,slicesLeft,totalNucNotCorr,totalMitoNotCorr,corrTotaleNuc);
+	csvArray = newArray(name,unit,pixelW,pixelH,pixelZ,width,height,channels,frames,slices,nucleus_area,diameter,marge,totalThick,nucleusSlices,totalPlainNucleus,slicesLeft,totalNucNotCorr,totalMitoNotCorr,corrTotaleNuc,treshold,beyondTh,sumPxInt);
 	csvString = "";
 	
 	for (i = 0; i < csvArray.length-1; i++) csvString = csvString + csvArray[i] + ";" ;
@@ -279,21 +283,17 @@ function splitProjections(name){
  * > appel à CountNucleisAreaLessThan()
  * > appel à CountNucleis_control()
  */
-function measurement(k) { 
+function measurementBlue(k) { 
 	run("Set Measurements...", "area centroid limit redirect=None decimal=3");
 	//clean
-	if(isOpen("Results")){
-		selectWindow("Results"); run("Close");
-	}
-	if(isOpen("ROI Manager")){
-		selectWindow("ROI Manager"); run("Close");
-	}
+	runClose("Results",1);
+	runClose("ROI Manager",1);
 	
 	selectWindow("p"+k);
 	run("8-bit");
 	run("Set Scale...", "distance=0 known=0 unit=pixel");
 
-	total_nuc=0; //variable de compte des objets
+	total_nuc=0; 											// variable de compte des objets
 	total_mito=0;
 	run("Duplicate...", "title=imgDup");
 	run("Command From Macro", "command=[de.csbdresden.stardist.StarDist2D], args=['input':'imgDup', 'modelChoice':'Versatile (fluorescent nuclei)', 'normalizeInput':'true', 'percentileBottom':'72.7', 'percentileTop':'98.4', 'probThresh':'0.5', 'nmsThresh':'0.4', 'outputType':'Both', 'modelFile':'C:\\\\Users\\\\crouvier\\\\Downloads\\\\3d-unet---arabidopsis---zerocostdl4mic_tensorflow_saved_model_bundle\\\\TF_SavedModel.zip', 'nTiles':'1', 'excludeBoundary':'2', 'roiPosition':'Automatic', 'verbose':'true', 'showCsbdeepProgress':'false', 'showProbAndDist':'false'], process=[false]");
@@ -303,14 +303,12 @@ function measurement(k) {
 	total_nuc = total_nuc+numbers[0];
 	total_mito = total_mito+numbers[1];
 	
-	selectWindow("labels"); close();
+	runClose("labels",0);
 	
 	arrEnd = CountNucleis_control("p"+k,k,nucleus_area);	// --> CountNucleis_control
 	
-	if(isOpen("Results")){
-		selectWindow("Results"); run("Close");
-	}
-	selectWindow("imgDup"); close();
+	runClose("Results",1);
+	runClose("imgDup",0);
 	
 	return newArray(arrEnd,total_nuc,total_mito); 			// --> splitProjections
 }
@@ -424,4 +422,33 @@ function correction(first,second,marge) {
 	}
 	
 	return cor;								// --> splitProjection
+}
+
+
+function measurementRed(k) { 
+	
+	runClose("Results",1);
+	runClose("ROI Manager",1);
+	selectWindow("p"+k);
+	run("8-bit");
+	treshold = 32;
+	beyondTh = 0;
+	sumPxInt = 0;
+	for (x = 0; x < width; x++) {
+		for (y = 0; y < height; y++) {
+			intensity = getPixel(x,y);
+			if (intensity>treshold){
+				beyondTh+=1;
+				sumPxInt+=intensity;
+			}
+		}
+	}
+	return newArray(treshold,beyondTh,sumPxInt); // --> splitProjections
+}
+
+
+function runClose(windowName, type) { // 0 -> image / 1 -> other
+	if(!isOpen(windowName)) return 0;
+	if(type==0){ selectWindow(windowName); close(); }
+	if(type==1){ selectWindow(windowName); run("Close"); }
 }
