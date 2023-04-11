@@ -259,7 +259,7 @@ function splitProjections(name){
 		selectWindow("red");
 		run("Z Project...","start=" + (i*nucleusSlices)+1 + " stop=" + (i+1)*nucleusSlices + " projection=[Max Intensity]");
 		rename("p"+i);
-		redMeasure = MeasurementRed(i);			// --> measurement
+		redMeasure = measurementRed(i);			// --> measurement
 		treshold = redMeasure[0];
 		beyondTh = redMeasure[1];
 		sumPxInt = redMeasure[2];
