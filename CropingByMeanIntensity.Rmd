@@ -1,0 +1,88 @@
+---
+title: "CropingByMeanIntensity"
+author: "H Desgrez Dautet"
+date: "2023-04-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r param}
+slicesByNucleus <- 10
+```
+
+### Récupération des données
+```{r import}
+setRepositories(graphics = getOption("menu.graphics"))
+titlesAndSlices <- read.csv(file = "titlesAndSlices.csv",header=TRUE,sep=';',dec='.')
+meanBlue <- read.csv(file = "TmeanBlue4crop.csv",header=FALSE,sep=';',dec='.')
+meanRed <- read.csv(file = "TmeanBlue4crop.csv",header=FALSE,sep=';',dec='.')
+```
+
+### Réunion des données
+```{r merge}
+tmeanBlue <- t(meanBlue)
+tmeanRed <- t(meanRed)
+dfBlue <- data.frame(titlesAndSlices,tmeanBlue)
+dfRed <- data.frame(titlesAndSlices,tmeanRed)
+```
+
+### Fonctions
+```{r function}
+indexMinSlices <- function (arr, out){
+  size <- length(arr)
+  if (out==0) return (c(1,size))
+  
+  cptBas <- 1
+  cptHaut <- size
+  for (i in c(1:out)){
+    if (arr[[cptBas]] < arr[[cptHaut]])
+      cptBas<-cptBas+1
+    else 
+      cptHaut<-cptHaut-1
+  }
+  return (c(cptBas,cptHaut))
+}
+
+crop <- function(ligne, ouput){
+  title <- ligne[1]
+  slices <- as.integer(ligne[2])
+  
+  slicesLeft <- slices - slicesByNucleus
+  means <- lapply(ligne[1:slices+2],as.integer)
+  minMax <- indexMinSlices(means,slicesLeft)
+  
+  output4csv <- c(title,slices,minMax[1],minMax[2])
+  write.csv(output4csv, output, append = TRUE, sep=';', row.names = FALSE, col.names = FALSE)
+}
+```
+
+### Traitement
+```{r traitement}
+write.csv(c("title","slices","min","max"), outputBlue, quote=FALSE, append=FALSE, sep=';', eol="\n", row.names=FALSE, col.names=FALSE)
+write.csv(c("title","slices","min","max"), outputRed, quote=FALSE, append=FALSE, sep=';', eol="\n", row.names=FALSE, col.names=FALSE)
+
+apply(dfBlue, 1, crop, "cropByBlue.csv")
+apply(dfRed, 1, crop, "cropByRed.csv")
+```
+
+
+
+
+### Test pour bon focntionnement
+```{r test}
+# t1 <- c(1,2,3,4,5,6,7,8,9,10)
+# t2 <- c(1,2,9,4,5,6,7,8,9,3)
+# t3 <- c(3,2,3,4,5,6,7,8,1,2)
+# 
+# r1 <- indexMinSlices(na.omit(t1),2)
+# r2 <- indexMinSlices(na.omit(t2),2)
+# r3 <- indexMinSlices(na.omit(t3),2)
+# cat("res1=",r1,"res2=",r2,"res3=",r3)
+
+# write.csv("test", outputBlue, append = TRUE, sep=';', row.names = FALSE, col.names = FALSE)
+```
+
