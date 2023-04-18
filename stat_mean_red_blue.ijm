@@ -70,13 +70,13 @@ function ouverture(file_path_curr, fichier){
 	ret_csv = "";
 	ret_csv = name + ";" + slices + ";";
 	for (i = 0; i < slices-1; i++) ret_csv = ret_csv + mean_tab_red[i] + ";";
-	ret_cav = ret_csv + mean_tab_red[slices-1];
+	ret_csv = ret_csv + mean_tab_red[slices-1];
 	File.append(ret_csv, outputPathCSV_red);
 	
 	ret_csv = "";
 	ret_csv = name + ";" + slices + ";";
 	for (i = 0; i < slices-1; i++) ret_csv = ret_csv + mean_tab_blue[i] + ";";
-	ret_cav = ret_csv + mean_tab_blue[slices-1];
+	ret_csv = ret_csv + mean_tab_blue[slices-1];
 	File.append(ret_csv, outputPathCSV_blue);
 }
 
