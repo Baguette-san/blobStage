@@ -1,0 +1,1201 @@
+---
+title: "Untitled"
+author: "A Dussutour / H Desgrez Dautet"
+date: "2023-05-10"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{clearance}
+
+```
+
+```{r library}
+library(lme4)
+library(car) 
+library(multcomp)
+library(ggplot2)
+library(MuMIn)
+library(nlme)
+library(lattice)
+library(MASS)
+library(emmeans)
+library(gridExtra)
+library(sjPlot)
+library(sjmisc)
+library(xtable)
+library("ggpubr")
+library(bestNormalize)
+library(gridExtra)
+library(grid)
+library("dplyr")
+library(lmerTest)
+library(ggpubr)
+library(unmarked)
+library(AICcmodavg)
+```
+
+#open file : Data_hermes_Age.txt Ouvre le fichier (.txt en tableau séparé par des tabulation)
+
+```{r }
+DATA_AGE <- read.table(file.choose(), header = TRUE)
+#str(DATA_AGE)
+```
+
+#plot data distribution and normality test, variable nucByMic3 1. distribution du nombre de noyau/mic3 2. visualisation obs/théorique 3. test de Shapiro (nb de noyaux / micron)
+
+```{r }
+ggdensity(DATA_AGE$nucByMic3, 
+          main = "Density plot for the number of nuclei by µm³",
+          xlab = "Number of nuclei by µm³")
+ggqqplot(DATA_AGE$nucByMic3)
+shapiro.test(DATA_AGE$nucByMic3)
+```
+
+#normalize variable nucByMic3\
+1. best normalize -\> transformation de la donnée pour normaliser sélectionnée selon le Pearson test\
+2. truehist \*2 pour montrer l'avant après normalisation\
+3. boxplot sur les prédiction hors échantillon
+
+```{r }
+bestNormalize(DATA_AGE$nucByMic3, allow_orderNorm = FALSE)
+nucByMic3BN <- bestNormalize(DATA_AGE$nucByMic3)
+MASS::truehist(DATA_AGE$nucByMic3)
+MASS::truehist(nucByMic3BN$x.t)
+DATA_AGE$nucByMic3.t <- nucByMic3BN$x.t
+boxplot(log10(nucByMic3BN$oos_preds), yaxt = 'n')
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+#plot normalized data distribution and normality, variable nucByMic3 vérification normalité sur les données transformées
+
+```{r }
+ggdensity(DATA_AGE$nucByMic3.t, 
+          main = "Density plot for the number of nuclei by µm³ Normalized", 
+          xlab = "Number of nuclei by µm³ (Normalized)")
+ggqqplot(DATA_AGE$nucByMic3.t)
+shapiro.test(DATA_AGE$nucByMic3.t)
+```
+
+#run LMM , variable nucByMic3 normalized création de 2 modèles mixtes linéaires AnOVa sur les deux modèles (j'ai rajouté le refit = FALSE sinon l'anova faisait un refit en ML)
+
+```{r }
+ModelnucByMic3 <- lme4::lmer(nucByMic3.t~AgeW*Spec+(1|ID2),
+                             data = DATA_AGE)
+summary(ModelnucByMic3)
+ModelnucByMic3_2 <- lme4::lmer(nucByMic3.t~AgeW+Spec+(1|ID2),
+                               data = DATA_AGE)
+summary(ModelnucByMic3_2)
+anova(ModelnucByMic3,
+      ModelnucByMic3_2, 
+      test = 'F', 
+      refit = FALSE)
+```
+
+#figure it
+
+```{r }
+tab_model(ModelnucByMic3_2,
+          show.df = TRUE,
+          show.stat = TRUE,
+          show.loglik = TRUE,
+          dv.labels = "Number of nuclei by µm³ (Normalized)",
+          pred.labels = c("Intersection", "Age", "Lu vs Malu")
+)
+plot(ModelnucByMic3_2)
+par(mfrow = c(1, 2))
+qqnorm(lme4::ranef(ModelnucByMic3_2)$ID2[, 1], 
+       main = "Random effects of ID")
+qqnorm(resid(ModelnucByMic3_2), main = "Residuals")
+```
+
+#Graph, variable nucByMic3
+
+```{r }
+GraphnucByMic3 <- ggboxplot(DATA_AGE,
+                            x = "Spec",
+                            y = "nucByMic3",
+                            color = "Spec",
+                            palette = "jco",
+                            add = "jitter") + 
+     labs(x = "Strain",
+          y = "Number of nuclei by µm³") + 
+     scale_x_discrete(breaks = c("Lu", "MaLu"),
+                      
+                      labels = c("Lu", "Malu")) +
+     stat_summary(
+          fun = mean,
+          geom = "point",
+          shape = 20,
+          size = 10,
+          color = "grey",
+          fill = "grey"
+     ) +
+     theme(panel.background = element_rect(fill = "white", 
+                                           colour = "black"),
+           legend.position = "none",
+           legend.text = element_text(size = 24),
+           text = element_text(size = 24),
+           plot.title = element_text(hjust = 0.5)
+     ) +
+     theme(panel.grid.major = element_blank(),
+           panel.grid.minor = element_blank())
+
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) +
+     plot(GraphnucByMic3)
+
+AgeW.labs <- c("1 week", "52 weeks")
+names(AgeW.labs) <- c("1", "52")
+GraphnucByMic3T <- GraphnucByMic3 + 
+     facet_grid(. ~ AgeW, labeller = labeller(AgeW = AgeW.labs)) + 
+     theme(strip.background = element_rect(colour = "black", 
+                                           fill = "white"))
+plot(GraphnucByMic3T)
+```
+
+#plot data distribution and normality test, variable MitoByMic3
+
+```{r }
+ggdensity(DATA_AGE$MitoByMic3, 
+          main = "Density plot for the number of mitochondria by µm³", xlab = "Number of mitochondria by µm³")
+
+ggqqplot(DATA_AGE$MitoByMic3)
+shapiro.test(DATA_AGE$MitoByMic3)
+```
+
+#normalize variable MitoByMic3
+
+```{r }
+bestNormalize(DATA_AGE$MitoByMic3,allow_orderNorm = FALSE)
+MitoByMic3BN <- bestNormalize(DATA_AGE$MitoByMic3)
+MASS::truehist(DATA_AGE$MitoByMic3)
+MASS::truehist(MitoByMic3BN$x.t)
+DATA_AGE$MitoByMic3.t <- MitoByMic3BN$x.t  
+boxplot(log10(MitoByMic3BN$oos_preds), yaxt = 'n')
+axis(2, 
+     at = log10(c(.1,.5, 1, 2, 5, 10)), 
+     labels = c(.1,.5, 1, 2, 5, 10))
+```
+
+#plot normalized data distribution and normality, variable MitoByMic3
+
+```{r }
+ggdensity(DATA_AGE$MitoByMic3.t, 
+          main = "Density plot for the number of mitochondria by µm³",
+          xlab = "Number of mitochondria by µm³ (Normalized)")
+
+ggqqplot(DATA_AGE$MitoByMic3.t)
+shapiro.test(DATA_AGE$MitoByMic3.t)
+```
+
+#run LMM , variable MitoByMic3 normalized
+
+```{r }
+ModelMitoByMic3 <- lme4::lmer(MitoByMic3.t ~ AgeW * Spec +(1 | ID2),
+                              data = DATA_AGE)
+summary(ModelMitoByMic3)
+ModelMitoByMic3_2 <- lme4::lmer(MitoByMic3.t ~ AgeW +Spec +(1 | ID2),
+                                data = DATA_AGE)
+summary(ModelMitoByMic3_2)
+anova(ModelMitoByMic3, 
+      ModelMitoByMic3_2, 
+      test = 'F')
+
+anova(ModelMitoByMic3, 
+      type = 3, 
+      ddf = "Satterthwaite")
+
+tab_model(
+   ModelMitoByMic3,
+   show.df = TRUE,
+   show.stat = TRUE,
+   show.loglik = TRUE,
+   dv.labels = "Number of mitochondria by µm³ (Normalized)",
+   pred.labels = c("Intersection", "Age", "Lu vs Malu", "Age x Strain")
+)
+
+plot(ModelMitoByMic3)
+par(mfrow = c(1, 2))
+qqnorm(lme4::ranef(ModelMitoByMic3)$ID2[, 1], 
+       main = "Random effects of ID")
+qqnorm(resid(ModelMitoByMic3), main = "Residuals")
+```
+
+#Graph, variable MitoByMic3
+
+```{r }
+GraphMitoByMic3 <- ggboxplot(
+     DATA_AGE,
+     x = "Spec",
+     y = "MitoByMic3",
+     color = "Spec",
+     palette = "jco",
+     add = "jitter"
+) +
+     labs(x = "Strain",
+          y = "Number of mitochondria by µm³") +
+     scale_x_discrete(breaks = c("Lu", "MaLu"),
+                      labels = c("Lu", "Malu")) +
+     stat_summary(
+          fun.y = mean,
+          geom = "point",
+          shape = 20,
+          size = 10,
+          color = "grey",
+          fill = "grey"
+     ) +
+     theme(
+          panel.background = element_rect(fill = "white",
+                                          colour = "black"),
+          legend.position = "none",
+          legend.text = element_text(size = 24),
+          text = element_text(size = 24),
+          plot.title = element_text(hjust = 0.5)
+     ) +
+     theme(panel.grid.major = element_blank(),
+           panel.grid.minor = element_blank())
+
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) +
+     plot(GraphMitoByMic3)
+
+AgeW.labs <- c("1 week", "52 weeks")
+names(AgeW.labs) <- c("1", "52")
+GraphMitoByMic3T <-
+     GraphMitoByMic3 + facet_grid(. ~ AgeW, labeller = labeller(AgeW = AgeW.labs)) + theme(strip.background = element_rect(colour = "black", fill = "white"))
+
+plot(GraphMitoByMic3T)
+```
+
+#plot data distribution and normality test, variable meanAreaNuc
+
+```{r }
+ggdensity(DATA_AGE$meanAreaNuc,
+          main = "Density plot for Mean Area of a Nucleus by µm³",
+          xlab = "Mean Area of a Nucleus")
+ggqqplot(DATA_AGE$meanAreaNuc)
+shapiro.test(DATA_AGE$meanAreaNuc)
+```
+
+#normalize variable meanAreaNuc
+
+```{r }
+bestNormalize(DATA_AGE$meanAreaNuc, allow_orderNorm = FALSE)
+meanAreaNucBN <- bestNormalize(DATA_AGE$meanAreaNuc)
+MASS::truehist(DATA_AGE$meanAreaNuc)
+MASS::truehist(meanAreaNucBN$x.t)
+DATA_AGE$meanAreaNuc.t <- meanAreaNucBN$x.t
+boxplot(log10(meanAreaNucBN$oos_preds), yaxt = 'n')
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+#plot normalized data distribution and normality, variable meanAreaNuc
+
+```{r }
+ggdensity(
+     DATA_AGE$meanAreaNuc.t,
+     main = "Density plot for the Mean Area of a Nucleus Normalized",
+     xlab = "Mean Area of a Nucleus (Normalized)")
+ggqqplot(DATA_AGE$meanAreaNuc.t)
+shapiro.test(DATA_AGE$meanAreaNuc.t)
+```
+
+#run LMM , variable meanAreaNuc normalized
+
+```{r }
+ModelmeanAreaNuc <- 
+     lme4::lmer(meanAreaNuc.t ~ AgeW * Spec + (1 |ID2),
+                data = DATA_AGE)
+summary(ModelmeanAreaNuc)
+ModelmeanAreaNuc_2 <-
+   lme4::lmer(meanAreaNuc.t ~ AgeW + Spec + (1 | ID2), 
+              data = DATA_AGE)
+summary(ModelmeanAreaNuc_2)
+anova(ModelmeanAreaNuc, ModelmeanAreaNuc_2, test = 'F')
+
+anova(ModelmeanAreaNuc, type = 3, ddf = "Satterthwaite")
+
+tab_model(
+   ModelmeanAreaNuc,
+   show.df = TRUE,
+   show.stat = TRUE,
+   show.loglik = TRUE,
+   dv.labels = "Area of a Nucleus (Normalized)",
+   pred.labels = c("Intersection", 
+                   "Age", 
+                   "Lu vs Malu", 
+                   "Age x Strain"))
+
+plot(ModelmeanAreaNuc)
+par(mfrow = c(1, 2))
+qqnorm(lme4::ranef(ModelmeanAreaNuc)$ID2[, 1],
+       main = "Random effects of ID")
+qqnorm(resid(ModelmeanAreaNuc), 
+       main = "Residuals")
+```
+
+#Graph, variable meanAreaNuc
+
+```{r }
+GraphmeanAreaNuc <-
+   ggboxplot(
+      DATA_AGE,
+      x = "Spec",
+      y = "meanAreaNuc",
+      color = "Spec",
+      palette = "jco",
+      add = "jitter"
+   ) + 
+  labs(x = "Strain", y = "Area of a Nucleus") + 
+  scale_x_discrete(breaks = c("Lu", "MaLu"),
+                   labels = c("Lu", "Malu")) + 
+  stat_summary(fun.y = mean,
+               geom = "point",
+               shape = 20,
+               size = 10,
+               color = "grey",
+               fill = "grey") + 
+  theme(panel.background = element_rect(fill = "white", 
+                                        colour = "black"),
+        legend.position = "none",
+        legend.text = element_text(size = 24),
+        text = element_text(size = 24),
+        plot.title = element_text(hjust = 0.5)) + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) + 
+  plot(GraphmeanAreaNuc)
+AgeW.labs <- c("1 week", "52 weeks")
+names(AgeW.labs) <- c("1", "52")
+GraphmeanAreaNucT <- GraphmeanAreaNuc + 
+     facet_grid(. ~ AgeW, 
+                labeller = labeller(AgeW = AgeW.labs)) + 
+  theme(strip.background = element_rect(colour = "black", 
+                                        fill = "white"))
+plot(GraphmeanAreaNucT)
+```
+
+#plot data distribution and normality test, variable IntByMic3
+
+```{r }
+ggdensity(DATA_AGE$IntByMic3, 
+          main = "Density plot for Mitosox signal by µm³", 
+          xlab = "Mitosox signal by µm³")
+ggqqplot(DATA_AGE$IntByMic3)
+shapiro.test(DATA_AGE$IntByMic3)
+```
+
+#normalize variable IntByMic3
+
+```{r }
+bestNormalize(DATA_AGE$IntByMic3, allow_orderNorm = FALSE)
+IntByMic3BN <- bestNormalize(DATA_AGE$IntByMic3)
+MASS::truehist(DATA_AGE$IntByMic3)
+MASS::truehist(IntByMic3BN$x.t)
+DATA_AGE$IntByMic3.t <- IntByMic3BN$x.t
+boxplot(log10(IntByMic3BN$oos_preds), yaxt = 'n')
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+#plot normalized data distribution and normality, variable IntByMic3
+
+```{r }
+ggdensity(DATA_AGE$IntByMic3.t, 
+          main = "Density plot for the Mitosox signal by µm³ Normalized", 
+          xlab = "Mitosox signal by µm³ (Normalized)")
+
+ggqqplot(DATA_AGE$IntByMic3.t)
+shapiro.test(DATA_AGE$IntByMic3.t)
+```
+
+#run LMM , variable IntByMic3 normalized
+
+```{r }
+ModelIntByMic3 <- 
+     lme4::lmer(IntByMic3.t ~ AgeW * Spec + (1 | ID2), 
+                data = DATA_AGE)
+summary(ModelIntByMic3)
+ModelIntByMic3_2 <- 
+     lme4::lmer(IntByMic3.t ~ AgeW + Spec + (1 | ID2), 
+                data = DATA_AGE)
+summary(ModelIntByMic3_2)
+anova(ModelIntByMic3, 
+      ModelIntByMic3_2, 
+      test = 'F')
+
+anova(ModelIntByMic3, 
+      type = 3, 
+      ddf = "Satterthwaite")
+
+tab_model(
+   ModelIntByMic3,
+   show.df = TRUE,
+   show.stat = TRUE,
+   show.loglik = TRUE,
+   dv.labels = "Mitosox signal by µm³ (Normalized)",
+   pred.labels = c("Intersection", "Age", "Lu vs Malu", "Age x Strain"))
+
+plot(ModelIntByMic3)
+par(mfrow = c(1, 2))
+qqnorm(lme4::ranef(ModelIntByMic3)$ID2[, 1], 
+       main = "Random effects of ID")
+qqnorm(resid(ModelIntByMic3), 
+       main = "Residuals")
+```
+
+#Graph, variable IntByMic3
+
+```{r }
+GraphIntByMic3 <-
+   ggboxplot(
+      DATA_AGE,
+      x = "Spec",
+      y = "IntByMic3",
+      color = "Spec",
+      palette = "jco",
+      add = "jitter"
+   ) + 
+  labs(x = "Strain", y = "Mitosox signal by µm³") + 
+  scale_x_discrete(breaks = c("Lu", "MaLu"),
+                   labels = c("Lu", "Malu")) + 
+  stat_summary(fun.y = mean,
+               geom = "point",
+               shape = 20,
+               size = 10,
+               color = "grey",
+               fill = "grey"
+) + 
+  theme(panel.background = element_rect(fill = "white", 
+                                        colour = "black"),
+        legend.position = "none",
+        legend.text = element_text(size = 24),
+        text = element_text(size = 24),
+        plot.title = element_text(hjust = 0.5)
+) + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) + 
+  plot(GraphIntByMic3)
+
+AgeW.labs <- c("1 week", "52 weeks")
+names(AgeW.labs) <- c("1", "52")
+GraphIntByMic3T <- GraphIntByMic3 + 
+  facet_grid(. ~ AgeW, labeller = labeller(AgeW = AgeW.labs)) + 
+  theme(strip.background = element_rect(colour = "black", 
+                                        fill = "white"))
+
+plot(GraphIntByMic3T)
+```
+
+#plot data distribution and normality test, variable IntMeanRescale
+
+```{r }
+ggdensity(DATA_AGE$IntMeanRescale, 
+          main = "Density plot for Mitosox signal by µm³", 
+          xlab = "Mitosox signal by µm³")
+ggqqplot(DATA_AGE$IntMeanRescale)
+shapiro.test(DATA_AGE$IntMeanRescale)
+```
+
+#normalize variable IntMeanRescale
+
+```{r }
+bestNormalize(DATA_AGE$IntMeanRescale, allow_orderNorm = FALSE)
+IntMeanRescaleBN <- bestNormalize(DATA_AGE$IntMeanRescale)
+MASS::truehist(DATA_AGE$IntMeanRescale)
+MASS::truehist(IntMeanRescaleBN$x.t)
+DATA_AGE$IntMeanRescale.t <- IntMeanRescaleBN$x.t
+boxplot(log10(IntMeanRescaleBN$oos_preds), yaxt = 'n')
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+#plot normalized data distribution and normality, variable IntMeanRescale
+
+```{r }
+ggdensity(DATA_AGE$IntMeanRescale.t, 
+          main = "Density plot for the Mitosox signal by µm³ Normalized", 
+          xlab = "Mitosox signal by µm³ (Normalized)")
+ggqqplot(DATA_AGE$IntMeanRescale.t)
+shapiro.test(DATA_AGE$IntMeanRescale.t)
+```
+
+#run LMM , variable IntMeanRescale normalized
+
+```{r }
+ModelIntMeanRescale <-
+   lme4::lmer(IntMeanRescale.t ~ AgeW * Spec + (1 | ID2), 
+              data = DATA_AGE)
+summary(ModelIntMeanRescale)
+ModelIntMeanRescale_2 <-
+   lme4::lmer(IntMeanRescale.t ~ AgeW + Spec + (1 | ID2), 
+              data = DATA_AGE)
+summary(ModelIntMeanRescale_2)
+anova(ModelIntMeanRescale, 
+      ModelIntMeanRescale_2, 
+      test = 'F')
+
+anova(ModelIntMeanRescale, 
+      type = 3, 
+      ddf = "Satterthwaite")
+
+tab_model(
+   ModelIntMeanRescale,
+   show.df = TRUE,
+   show.stat = TRUE,
+   show.loglik = TRUE,
+   dv.labels = "Mitosox signal by µm³ (Normalized)",
+   pred.labels = c("Intersection", 
+                   "Age", 
+                   "Lu vs Malu", 
+                   "Age x Strain"))
+
+plot(ModelIntMeanRescale)
+par(mfrow = c(1, 2))
+qqnorm(lme4::ranef(ModelIntMeanRescale)$ID2[, 1], 
+       main = "Random effects of ID")
+qqnorm(resid(ModelIntMeanRescale), 
+       main = "Residuals")
+```
+
+#Graph, variable IntMeanRescale
+
+```{r }
+GraphIntMeanRescale <- ggboxplot(DATA_AGE,
+								 x = "Spec",
+								 y = "IntMeanRescale",
+								 color = "Spec",
+								 palette = "jco",
+								 add = "jitter") +
+	labs(x = "Strain", y = "Mitosox signal by µm³") +
+	scale_x_discrete(breaks = c("Lu", "MaLu"),
+					 labels = c("Lu", "Malu")) +
+	stat_summary(
+		fun.y = mean,
+		geom = "point",
+		shape = 20,
+		size = 10,
+		color = "grey",
+		fill = "grey") +
+	theme(
+		panel.background = element_rect(fill = "white",
+										colour = "black"),
+		legend.position = "none",
+		legend.text = element_text(size = 24),
+		text = element_text(size = 24),
+		plot.title = element_text(hjust = 0.5)) +
+	theme(panel.grid.major = element_blank(),
+		  panel.grid.minor = element_blank())
+
+theme(panel.grid.major = element_blank(),
+	  panel.grid.minor = element_blank()) +
+	plot(GraphIntMeanRescale)
+
+AgeW.labs <- c("1 week", "52 weeks")
+
+names(AgeW.labs) <- c("1", "52")
+
+GraphIntMeanRescaleT <- GraphIntMeanRescale +
+	facet_grid(. ~ AgeW,
+			   labeller = labeller (AgeW = AgeW.labs)) +
+	theme(strip.background = element_rect(colour = "black",
+										  fill = "white"))
+plot(GraphIntMeanRescaleT)
+```
+
+################################################################################
+################################################################################
+################################################################################
+################################################################################
+################################################################################
+
+#RECOVERY
+
+#open file : Data_hermes_Recovery.txt
+
+```{r }
+DATA_RECOVERY <- read.table(file.choose(), header = TRUE)
+#str(DATA_RECOVERY)
+```
+
+#plot data distribution and normality test, variable nucByMic3
+
+```{r }
+ggdensity(DATA_RECOVERY$nucByMic3, 
+          main = "Density plot for the number of nuclei by µm³", 
+          xlab = "Number of nuclei by µm³")
+ggqqplot(DATA_RECOVERY$nucByMic3)
+shapiro.test(DATA_RECOVERY$nucByMic3)
+```
+
+#normalize variable nucByMic3
+
+```{r }
+bestNormalize(DATA_RECOVERY$nucByMic3, allow_orderNorm = FALSE)
+nucByMic3BN <- bestNormalize(DATA_RECOVERY$nucByMic3)
+MASS::truehist(DATA_RECOVERY$nucByMic3)
+MASS::truehist(nucByMic3BN$x.t)
+DATA_RECOVERY$nucByMic3.t <- nucByMic3BN$x.t
+boxplot(log10(nucByMic3BN$oos_preds), 
+        yaxt = 'n')
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+#plot normalized data distribution and normality, variable nucByMic3
+
+```{r }
+ggdensity(DATA_RECOVERY$nucByMic3.t, 
+          main = "Density plot for the number of nuclei by µm³ Normalized", 
+          xlab = "Number of nuclei by µm³ (Normalized)")
+ggqqplot(DATA_RECOVERY$nucByMic3.t)
+shapiro.test(DATA_RECOVERY$nucByMic3.t)
+```
+
+#run LMM , variable nucByMic3 normalized
+
+```{r }
+ModelnucByMic3 <-
+   lme4::lmer(nucByMic3.t ~ Awake * Spec + (1 | ID2), 
+              data = DATA_RECOVERY)
+summary(ModelnucByMic3)
+ModelnucByMic3_2 <-
+   lme4::lmer(nucByMic3.t ~ Awake + Spec + (1 | ID2), 
+              data = DATA_RECOVERY)
+summary(ModelnucByMic3_2)
+anova(ModelnucByMic3, 
+      ModelnucByMic3_2, 
+      test = 'F')
+
+tab_model(ModelnucByMic3,
+          show.df = TRUE,
+          show.stat = TRUE,
+          show.loglik = TRUE,
+          dv.labels = "Number of nuclei by µm³ (Normalized)",
+          pred.labels = c("Intersection", 
+                          "Recovery", 
+                          "Lu vs Malu", 
+                          "Recovery x Strain"))
+
+plot(ModelnucByMic3_2)
+par(mfrow = c(1, 2))
+qqnorm(lme4::ranef(ModelnucByMic3_2)$ID2[, 1],
+       main = "Random effects of ID")
+qqnorm(resid(ModelnucByMic3_2), 
+       main = "Residuals")
+```
+
+#Graph, variable nucByMic3
+
+```{r }
+GraphnucByMic3 <-
+   ggboxplot(DATA_RECOVERY,
+             x = "Spec",
+             y = "nucByMic3",
+             color = "Spec",
+             palette = "jco",
+             add = "jitter") + 
+     labs(x = "Strain", y = "Number of nuclei by µm³") + 
+     scale_x_discrete(breaks = c("Lu", "MaLu"),
+                   labels = c("Lu", "Malu")) +
+     stat_summary(fun.y = mean,
+                  geom = "point",
+                  shape = 20,
+                  size = 10,
+                  color = "grey",
+                  fill = "grey") + 
+  theme(panel.background = element_rect(fill = "white", 
+                                        colour = "black"),
+        legend.position = "none",
+        legend.text = element_text(size = 24),
+        text = element_text(size = 24),
+        plot.title = element_text(hjust = 0.5)) + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) + 
+  plot(GraphnucByMic3)
+Awake.labs <- c("Before", "After")
+names(Awake.labs) <- c("Before", "After")
+GraphnucByMic3T <- GraphnucByMic3 +
+     facet_grid(. ~ factor(Awake, 
+                           levels = c('Before', 'After')), 
+                labeller = labeller (Awake = Awake.labs)) + 
+  theme(strip.background = element_rect(colour = "black"
+                                        , fill = "white"))
+plot(GraphnucByMic3T)
+```
+
+#plot data distribution and normality test, variable MitoByMic3
+
+```{r }
+ggdensity(DATA_RECOVERY$MitoByMic3, 
+          main = "Density plot for the number of mitochondria by µm³",
+          xlab = "Number of mitochondria by µm³")
+ggqqplot(DATA_RECOVERY$MitoByMic3)
+shapiro.test(DATA_RECOVERY$MitoByMic3)
+```
+
+#normalize variable MitoByMic3
+
+```{r }
+bestNormalize(DATA_RECOVERY$MitoByMic3, allow_orderNorm = FALSE)
+MitoByMic3BN <- bestNormalize(DATA_RECOVERY$MitoByMic3)
+MASS::truehist(DATA_RECOVERY$MitoByMic3)
+MASS::truehist(MitoByMic3BN$x.t)
+DATA_RECOVERY$MitoByMic3.t <- MitoByMic3BN$x.t
+boxplot(log10(MitoByMic3BN$oos_preds), yaxt = 'n')
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+#plot normalized data distribution and normality, variable MitoByMic3
+
+```{r }
+ggdensity(DATA_RECOVERY$MitoByMic3.t, 
+          main = "Density plot for the number of mitochondria by µm³",
+          xlab = "Number of mitochondria by µm³ (Normalized)")
+ggqqplot(DATA_RECOVERY$MitoByMic3.t)
+shapiro.test(DATA_RECOVERY$MitoByMic3.t)
+```
+
+#run LMM , variable MitoByMic3 normalized
+
+```{r }
+ModelMitoByMic3 <-
+   lme4::lmer(MitoByMic3.t ~ Awake * Spec + (1 | ID2), 
+              data = DATA_RECOVERY)
+summary(ModelMitoByMic3)
+ModelMitoByMic3_2 <-
+   lme4::lmer(MitoByMic3.t ~ Awake + Spec + (1 | ID2), 
+              data = DATA_RECOVERY)
+summary(ModelMitoByMic3_2)
+anova(ModelMitoByMic3, 
+      ModelMitoByMic3_2, 
+      test = 'F')
+
+anova(ModelMitoByMic3_2, 
+      type = 3, 
+      ddf = "Satterthwaite")
+
+tab_model(ModelMitoByMic3_2,
+          show.df = TRUE,
+          show.stat = TRUE,
+          show.loglik = TRUE,
+          dv.labels = "Number of mitochondria by µm³ (Normalized)",
+          pred.labels = c("Intersection", "Recovery", "Lu vs Malu"))
+
+plot(ModelMitoByMic3_2)
+par(mfrow = c(1, 2))
+qqnorm(lme4::ranef(ModelMitoByMic3_2)$ID2[, 1], 
+       main = "Random effects of ID")
+qqnorm(resid(ModelMitoByMic3_2), 
+       main = "Residuals")
+```
+
+#Graph, variable MitoByMic3
+
+```{r }
+GraphMitoByMic3 <- ggboxplot(DATA_RECOVERY,
+                             x = "Spec",
+                             y = "MitoByMic3",
+                             color = "Spec",
+                             palette = "jco",
+                             add = "jitter") + 
+     labs(x = "Strain", y = "Number of mitochondria by µm³") +
+     scale_x_discrete(breaks = c("Lu", "MaLu"),
+                      labels = c("Lu", "Malu")) + 
+     stat_summary(fun.y = mean,
+                  geom = "point",
+                  shape = 20,
+                  size = 10,
+                  color = "grey",
+                  fill = "grey") + 
+  theme(panel.background = element_rect(fill = "white", 
+                                        colour = "black"),
+        legend.position = "none",
+        legend.text = element_text(size = 24),
+        text = element_text(size = 24),
+        plot.title = element_text(hjust = 0.5)) + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) + 
+  plot(GraphMitoByMic3)
+Awake.labs <- c("Before", "After")
+names(Awake.labs) <- c("Before", "After")
+GraphMitoByMic3T <- GraphMitoByMic3 + 
+     facet_grid(. ~ factor(Awake, 
+                           levels = c('Before', 'After')), 
+                labeller = labeller (Awake = Awake.labs)) + 
+  theme(strip.background = element_rect(colour = "black", 
+                                        fill = "white"))
+plot(GraphMitoByMic3T)
+```
+
+#plot data distribution and normality test, variable meanAreaNuc
+
+```{r }
+ggdensity(DATA_RECOVERY$meanAreaNuc, 
+          main = "Density plot for Mean Area of a Nucleus by µm³", 
+          xlab = "Mean Area of a Nucleus")
+ggqqplot(DATA_RECOVERY$meanAreaNuc)
+shapiro.test(DATA_RECOVERY$meanAreaNuc)
+```
+
+#normalize variable meanAreaNuc
+
+```{r }
+bestNormalize(DATA_RECOVERY$meanAreaNuc, allow_orderNorm = FALSE)
+meanAreaNucBN <- bestNormalize(DATA_RECOVERY$meanAreaNuc)
+MASS::truehist(DATA_RECOVERY$meanAreaNuc)
+MASS::truehist(meanAreaNucBN$x.t)
+DATA_RECOVERY$meanAreaNuc.t <- meanAreaNucBN$x.t
+boxplot(log10(meanAreaNucBN$oos_preds), yaxt = 'n')
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+#plot normalized data distribution and normality, variable meanAreaNuc
+
+```{r }
+ggdensity(DATA_RECOVERY$meanAreaNuc.t,
+          main = "Density plot for the Mean Area of a Nucleus Normalized",
+          xlab = "Mean Area of a Nucleus (Normalized)")
+ggqqplot(DATA_RECOVERY$meanAreaNuc.t)
+shapiro.test(DATA_RECOVERY$meanAreaNuc.t)
+```
+
+#run LMM , variable meanAreaNuc normalized
+
+```{r }
+ModelmeanAreaNuc <-
+   lme4::lmer(meanAreaNuc.t ~ Awake * Spec + (1 | ID2), 
+              data = DATA_RECOVERY)
+summary(ModelmeanAreaNuc)
+ModelmeanAreaNuc_2 <-
+   lme4::lmer(meanAreaNuc.t ~ Awake + Spec + (1 | ID2), 
+              data = DATA_RECOVERY)
+summary(ModelmeanAreaNuc_2)
+anova(ModelmeanAreaNuc, 
+      ModelmeanAreaNuc_2, 
+      test = 'F')
+
+anova(ModelmeanAreaNuc_2, 
+      type = 3, 
+      ddf = "Satterthwaite")
+
+tab_model(ModelmeanAreaNuc_2,
+          show.df = TRUE,
+          show.stat = TRUE,
+          show.loglik = TRUE,
+          dv.labels = "Area of a Nucleus (Normalized)",
+          pred.labels = c("Intersection", 
+                          "Recovery", 
+                          "Lu vs Malu"))
+
+plot(ModelmeanAreaNuc_2)
+par(mfrow = c(1, 2))
+qqnorm(lme4::ranef(ModelmeanAreaNuc_2)$ID2[, 1], 
+       main = "Random effects of ID")
+qqnorm(resid(ModelmeanAreaNuc_2), 
+       main = "Residuals")
+```
+
+#Graph, variable meanAreaNuc
+
+```{r }
+GraphmeanAreaNuc <- ggboxplot(DATA_RECOVERY,
+                              x = "Spec",
+                              y = "meanAreaNuc",
+                              color = "Spec",
+                              palette = "jco",
+                              add = "jitter") + 
+  labs(x = "Strain", y = "Area of a Nucleus") + 
+  scale_x_discrete(breaks = c("Lu", "MaLu"),
+                   labels = c("Lu", "Malu")) + 
+  stat_summary(fun.y = mean,
+               geom = "point",
+               shape = 20,
+               size = 10,
+               color = "grey",
+               fill = "grey") + 
+  theme(panel.background = element_rect(fill = "white", 
+                                        colour = "black"),
+        legend.position = "none",
+        legend.text = element_text(size = 24),
+        text = element_text(size = 24),
+        plot.title = element_text(hjust = 0.5)) + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) + 
+  plot(GraphmeanAreaNuc)
+
+Awake.labs <- c("After", "Before")
+
+names(Awake.labs) <- c("After", "Before")
+
+GraphmeanAreaNucT <- GraphmeanAreaNuc + 
+     facet_grid(. ~ factor(Awake, 
+                           levels = c('Before', 'After')), 
+                labeller = labeller (Awake = Awake.labs)) + 
+  theme(strip.background = element_rect(colour = "black", 
+                                        fill = "white"))
+plot(GraphmeanAreaNucT)
+```
+
+#plot data distribution and normality test, variable IntByMic3
+
+```{r }
+ggdensity(DATA_RECOVERY$IntByMic3, 
+          main = "Density plot for Mitosox signal by µm³", 
+          xlab = "Mitosox signal by µm³")
+ggqqplot(DATA_RECOVERY$IntByMic3)
+shapiro.test(DATA_RECOVERY$IntByMic3)
+```
+
+#normalize variable IntByMic3
+
+```{r }
+bestNormalize(DATA_RECOVERY$IntByMic3, allow_orderNorm = FALSE)
+IntByMic3BN <- bestNormalize(DATA_RECOVERY$IntByMic3)
+MASS::truehist(DATA_RECOVERY$IntByMic3)
+MASS::truehist(IntByMic3BN$x.t)
+DATA_RECOVERY$IntByMic3.t <- IntByMic3BN$x.t
+boxplot(log10(IntByMic3BN$oos_preds), yaxt = 'n')
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+#plot normalized data distribution and normality, variable IntByMic3
+
+```{r }
+ggdensity(DATA_RECOVERY$IntByMic3.t, 
+          main = "Density plot for the Mitosox signal by µm³ Normalized", 
+          xlab = "Mitosox signal by µm³ (Normalized)")
+ggqqplot(DATA_RECOVERY$IntByMic3.t)
+shapiro.test(DATA_RECOVERY$IntByMic3.t)
+```
+
+#run LMM , variable IntByMic3 normalized
+
+```{r }
+ModelIntByMic3 <-
+   lme4::lmer(IntByMic3.t ~ Awake * Spec + (1 | ID2), 
+              data = DATA_RECOVERY)
+
+summary(ModelIntByMic3)
+
+ModelIntByMic3_2 <-
+   lme4::lmer(IntByMic3.t ~ Awake + Spec + (1 | ID2), 
+              data = DATA_RECOVERY)
+
+summary(ModelIntByMic3_2)
+
+anova(ModelIntByMic3, ModelIntByMic3_2, test = 'F')
+
+anova(ModelIntByMic3, type = 3, ddf = "Satterthwaite")
+
+tab_model(ModelIntByMic3,
+          show.df = TRUE,
+          show.stat = TRUE,
+          show.loglik = TRUE,
+          dv.labels = "Mitosox signal by µm³ (Normalized)",
+          pred.labels = c("Intersection", 
+                          "Recovery", 
+                          "Lu vs Malu", 
+                          "Recovery x Strain"))
+
+plot(ModelIntByMic3)
+
+par(mfrow = c(1, 2))
+
+qqnorm(lme4::ranef(ModelIntByMic3)$ID2[, 1],
+       main = "Random effects of ID")
+
+qqnorm(resid(ModelIntByMic3), 
+       main = "Residuals")
+```
+
+#Graph, variable IntByMic3
+
+```{r }
+GraphIntByMic3 <- ggboxplot(DATA_RECOVERY,
+                            x = "Spec",
+                            y = "IntByMic3",
+                            color = "Spec",
+                            palette = "jco",
+                            add = "jitter") + 
+  labs(x = "Strain", y = "Mitosox signal by µm³") + 
+  scale_x_discrete(breaks = c("Lu", "MaLu"),
+                   labels = c("Lu", "Malu")) + 
+  stat_summary(fun.y = mean,
+               geom = "point",
+               shape = 20,
+               size = 10,
+               color = "grey",
+               fill = "grey") + 
+  theme(panel.background = element_rect(fill = "white", 
+                                        colour = "black"),
+        legend.position = "none",
+        legend.text = element_text(size = 24),
+        text = element_text(size = 24),
+        plot.title = element_text(hjust = 0.5)) + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) + 
+  plot(GraphIntByMic3)
+
+Awake.labs <- c("After", "Before")
+
+names(Awake.labs) <- c("After", "Before")
+
+GraphIntByMic3T <- GraphIntByMic3 + 
+     facet_grid(. ~ factor(Awake, 
+                           levels = c('Before', 'After')), 
+                labeller = labeller (Awake = Awake.labs)) + 
+  theme(strip.background = element_rect(colour = "black", 
+                                        fill = "white"))
+plot(GraphIntByMic3T)
+```
+
+#plot data distribution and normality test, variable IntMeanRescale
+
+```{r }
+ggdensity(DATA_RECOVERY$IntMeanRescale,
+          main = "Density plot for Mitosox signal by µm³",
+          xlab = "Mitosox signal by µm³")
+ggqqplot(DATA_RECOVERY$IntMeanRescale)
+shapiro.test(DATA_RECOVERY$IntMeanRescale)
+```
+
+#normalize variable IntMeanRescale
+
+```{r }
+bestNormalize(DATA_RECOVERY$IntMeanRescale, allow_orderNorm = FALSE)
+IntMeanRescaleBN <- bestNormalize(DATA_RECOVERY$IntMeanRescale)
+MASS::truehist(DATA_RECOVERY$IntMeanRescale)
+MASS::truehist(IntMeanRescaleBN$x.t)
+DATA_RECOVERY$IntMeanRescale.t <- IntMeanRescaleBN$x.t
+boxplot(log10(IntMeanRescaleBN$oos_preds), yaxt = 'n')
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+#plot normalized data distribution and normality, variable IntMeanRescale
+
+```{r }
+ggdensity(DATA_RECOVERY$IntMeanRescale.t,
+          main = "Density plot for the Mitosox signal by µm³ Normalized",
+          xlab = "Mitosox signal by µm³ (Normalized)")
+ggqqplot(DATA_RECOVERY$IntMeanRescale.t)
+shapiro.test(DATA_RECOVERY$IntMeanRescale.t)
+```
+
+#run LMM , variable IntMeanRescale normalized
+
+```{r}
+ModelIntMeanRescale <-
+     lme4::lmer(IntMeanRescale.t ~ Awake * Spec + (1 | ID2), 
+                data = DATA_RECOVERY)
+
+summary(ModelIntMeanRescale)
+
+ModelIntMeanRescale_2 <-
+     lme4::lmer(IntMeanRescale.t ~ Awake + Spec + (1 | ID2), 
+                data = DATA_RECOVERY)
+
+summary(ModelIntMeanRescale_2)
+
+anova(ModelIntMeanRescale, ModelIntMeanRescale_2, test = 'F')
+
+anova(ModelIntMeanRescale, type = 3, ddf = "Satterthwaite")
+
+tab_model(ModelIntMeanRescale,
+          show.df = TRUE,
+          show.stat = TRUE,
+          show.loglik = TRUE,
+          dv.labels = "Mitosox signal by µm³ (Normalized)",
+          pred.labels = c("Intersection", 
+                          "Recovery", 
+                          "Lu vs Malu", 
+                          "Recovery x Strain"))
+
+plot(ModelIntMeanRescale)
+
+par(mfrow = c(1, 2))
+
+qqnorm(lme4::ranef(ModelIntMeanRescale)$ID2[, 1], 
+       main = "Random effects of ID")
+qqnorm(resid(ModelIntMeanRescale), 
+       main = "Residuals")
+```
+
+#Graph, variable IntMeanRescale
+
+```{r }
+GraphIntMeanRescale <- ggboxplot(DATA_RECOVERY,
+                                 x = "Spec",
+                                 y = "IntMeanRescale",
+                                 color = "Spec",
+                                 palette = "jco",
+                                 add = "jitter") + 
+  labs(x = "Strain", y = "Mitosox signal by µm³") + 
+     scale_x_discrete(breaks = c("Lu", "MaLu"),
+                      labels = c("Lu", "Malu")) +
+     stat_summary(fun.y = mean,
+                  geom = "point",
+                  shape = 20,
+                  size = 10,
+                  color = "grey",
+                  fill = "grey") +
+     theme(panel.background = element_rect(fill = "white", 
+                                           colour = "black"),
+           legend.position = "none",
+           legend.text = element_text(size = 24),
+           text = element_text(size = 24),
+           plot.title = element_text(hjust = 0.5)) +
+     theme(panel.grid.major = element_blank(),
+           panel.grid.minor = element_blank())
+
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) +
+	plot(GraphIntMeanRescale)
+
+Awake.labs <- c("After", "Before")
+
+names(Awake.labs) <- c("After", "Before")
+
+GraphIntMeanRescaleT <- GraphIntMeanRescale + 
+	facet_grid(. ~ ~ factor(Awake, 
+							levels = c('Before', 'After')), 
+			   labeller = labeller (Awake = Awake.labs)) +
+	theme(strip.background = element_rect(colour = "black", 
+										  fill = "white"))
+plot(GraphIntMeanRescaleT)
+```

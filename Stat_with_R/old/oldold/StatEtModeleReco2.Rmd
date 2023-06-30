@@ -1,0 +1,704 @@
+---
+title: "StatEtModeleReco"
+author: "Dussutour A. /Desgrez Dautet H."
+date: "2023-05-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+CODE = FALSE
+CLEAN = 'hide'
+```
+
+```{r library, message=FALSE,results=FALSE,warning=FALSE, echo=CODE}
+library(lme4)
+library(car) 
+library(multcomp)
+library(ggplot2)
+library(MuMIn)
+library(nlme)
+library(lattice)
+library(MASS)
+library(emmeans)
+library(gridExtra)
+library(sjPlot)
+library(sjmisc)
+library(xtable)
+library("ggpubr")
+library(bestNormalize)
+library(gridExtra)
+library(grid)
+library("dplyr")
+library(lmerTest)
+library(ggpubr)
+library(unmarked)
+library(AICcmodavg)
+```
+
+#RECOVERY
+
+```{r }
+#DATA_RECOVERY <- read.table(file.choose(), header = TRUE)
+#str(DATA_RECOVERY)
+
+DATA_RECOVERY <- read.csv(file.choose(), header = TRUE, sep = ";")
+#summary(mainDF)
+```
+
+#Nucleus by volume
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+ggdensity(DATA_RECOVERY$nucBy10Mic3, 
+          main = "Density plot for the number of nuclei by 1000 µm³", 
+          xlab = "Number of nuclei by 1000 µm³")
+
+ggqqplot(DATA_RECOVERY$nucBy10Mic3)
+
+shapiro.test(DATA_RECOVERY$nucBy10Mic3)
+```
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+bestNormalize(DATA_RECOVERY$nucBy10Mic3, allow_orderNorm = FALSE)
+
+nucBy10Mic3BN <- bestNormalize(DATA_RECOVERY$nucBy10Mic3)
+
+MASS::truehist(DATA_RECOVERY$nucBy10Mic3)
+
+MASS::truehist(nucBy10Mic3BN$x.t)
+
+DATA_RECOVERY$nucBy10Mic3.t <- nucBy10Mic3BN$x.t
+
+boxplot(log10(nucBy10Mic3BN$oos_preds), yaxt = 'n')
+
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+ggdensity(DATA_RECOVERY$nucBy10Mic3.t, 
+          main = "Density plot for the number of nuclei by 1000 µm³ Normalized", 
+          xlab = "Number of nuclei by 1000 µm³ (Normalized)")
+
+ggqqplot(DATA_RECOVERY$nucBy10Mic3.t)
+
+shapiro.test(DATA_RECOVERY$nucBy10Mic3.t)
+```
+
+```{r ,echo=CODE, result=CODE,message=FALSE}
+ModelnucBy10Mic3 <-
+  lmer(nucBy10Mic3.t ~ Awake * Strain + (1 | ID2), data = DATA_RECOVERY)
+
+summary(ModelnucBy10Mic3)
+
+ModelnucBy10Mic3_2 <-
+  lmer(nucBy10Mic3.t ~ Awake + Strain + (1 | ID2), data = DATA_RECOVERY)
+
+summary(ModelnucBy10Mic3_2)
+```
+
+```{r }
+anova(ModelnucBy10Mic3, ModelnucBy10Mic3_2, test = 'F')
+
+anova(ModelnucBy10Mic3, type = 3, ddf = "Satterthwaite")
+
+anova(ModelnucBy10Mic3_2, type = 3, ddf = "Satterthwaite")
+```
+
+```{r }
+tab_model(ModelnucBy10Mic3,
+          show.df = TRUE,
+          show.stat = TRUE,
+          show.loglik = TRUE,
+          dv.labels = "Number of nuclei by 1000 µm³ (Normalized)",
+          pred.labels = c("Intersection", "Recovery", "Lu vs Malu", "Recovery x Strain"))
+
+```
+
+```{r , echo=CODE, fig.show=CLEAN}
+plot(ModelnucBy10Mic3_2)
+
+par(mfrow = c(1, 2))
+
+qqnorm(lme4::ranef(ModelnucBy10Mic3_2)$ID2[, 1], main = "Random effects of ID")
+
+qqnorm(resid(ModelnucBy10Mic3_2), main = "Residuals")
+```
+
+```{r }
+aggregate(nucBy10Mic3 ~ Awake + Strain, data = DATA_RECOVERY, FUN = mean)
+aggregate(nucBy10Mic3 ~ Awake + Strain, data = DATA_RECOVERY, FUN = sd)
+aggregate(nucBy10Mic3 ~ Strain, data = DATA_RECOVERY, FUN = mean)
+aggregate(nucBy10Mic3 ~ Strain, data = DATA_RECOVERY, FUN = sd)
+```
+
+```{r , message=FALSE,results=FALSE,warning=FALSE, echo=CODE}
+GraphnucBy10Mic3 <-
+  ggboxplot(
+    DATA_RECOVERY,
+    x = "Strain",
+    y = "nucBy10Mic3",
+    color = "Strain",
+    palette = "jco",
+    add = "jitter"
+  ) +
+  labs(x = "Strain", y = "Number of nuclei by 1000 µm³") +
+  scale_x_discrete(breaks = c("Lu", "MaLu"),
+                   labels = c("Lu", "Malu")) +
+  stat_summary(
+    fun.y = mean,
+    geom = "point",
+    shape = 20,
+    size = 10,
+    color = "grey",
+    fill = "grey"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white", colour = "black"),
+    legend.position = "none",
+    legend.text = element_text(size = 24),
+    text = element_text(size = 24),
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  ylim(0, 20)
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) +
+  plot(GraphnucBy10Mic3)
+
+Awake.labs <- c("Ctrl", "With Dormancy")
+names(Awake.labs) <- c("No", "Yes")
+
+GraphnucBy10Mic3T <- GraphnucBy10Mic3 +
+  facet_grid(. ~ factor(Awake,
+                        levels = c("No", "Yes")),
+             labeller = labeller(Awake = Awake.labs)) +
+  theme(strip.background = element_rect(colour = "black", fill = "white"))
+
+plot(GraphnucBy10Mic3T)
+```
+
+# Mean Area
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+ggdensity(DATA_RECOVERY$meanAreaNuc, 
+          main = "Density plot for Mean Area of a Nucleus by 1000 µm³", 
+          xlab = "Mean Area of a Nucleus")
+
+ggqqplot(DATA_RECOVERY$meanAreaNuc)
+
+shapiro.test(DATA_RECOVERY$meanAreaNuc)
+```
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+bestNormalize(DATA_RECOVERY$meanAreaNuc, allow_orderNorm = FALSE)
+
+meanAreaNucBN <- bestNormalize(DATA_RECOVERY$meanAreaNuc)
+MASS::truehist(DATA_RECOVERY$meanAreaNuc)
+
+MASS::truehist(meanAreaNucBN$x.t)
+
+DATA_RECOVERY$meanAreaNuc.t <- meanAreaNucBN$x.t
+
+boxplot(log10(meanAreaNucBN$oos_preds), yaxt = 'n')
+
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+ggdensity(DATA_RECOVERY$meanAreaNuc.t,
+          main = "Density plot for the Mean Area of a Nucleus Normalized",
+          xlab = "Mean Area of a Nucleus (Normalized)")
+
+ggqqplot(DATA_RECOVERY$meanAreaNuc.t)
+
+shapiro.test(DATA_RECOVERY$meanAreaNuc.t)
+```
+
+```{r ,echo=CODE, result=CODE,message=FALSE}
+ModelmeanAreaNuc <-
+  lmer(meanAreaNuc.t ~ Awake * Strain + (1 | ID2), data = DATA_RECOVERY)
+
+summary(ModelmeanAreaNuc)
+
+ModelmeanAreaNuc_2 <-
+  lmer(meanAreaNuc.t ~ Awake + Strain + (1 | ID2), data = DATA_RECOVERY)
+
+summary(ModelmeanAreaNuc_2)
+```
+
+```{r }
+anova(ModelmeanAreaNuc, ModelmeanAreaNuc_2, test = 'F')
+
+anova(ModelmeanAreaNuc, type = 3, ddf = "Satterthwaite")
+
+anova(ModelmeanAreaNuc_2, type = 3, ddf = "Satterthwaite")
+```
+
+```{r }
+tab_model(ModelmeanAreaNuc,
+          show.df = TRUE,
+          show.stat = TRUE,
+          show.loglik = TRUE,
+          dv.labels = "Area of a Nucleus (Normalized)",
+          pred.labels = c("Intersection", 
+                          "Recovery", 
+                          "Lu vs Malu", 
+                          "Recovery x Strain"))
+
+```
+
+```{r , echo=CODE, fig.show=CLEAN}
+plot(ModelmeanAreaNuc_2)
+
+par(mfrow = c(1, 2))
+
+qqnorm(lme4::ranef(ModelmeanAreaNuc_2)$ID2[, 1], main = "Random effects of ID")
+
+qqnorm(resid(ModelmeanAreaNuc_2), main = "Residuals")
+```
+
+```{r }
+aggregate(meanAreaNuc ~ Awake + Strain, data = DATA_RECOVERY, FUN = mean)
+aggregate(meanAreaNuc ~ Awake + Strain, data = DATA_RECOVERY, FUN = sd)
+aggregate(meanAreaNuc ~ Strain, data = DATA_RECOVERY, FUN = mean)
+aggregate(meanAreaNuc ~ Strain, data = DATA_RECOVERY, FUN = sd)
+```
+
+#Graph, variable meanAreaNuc
+
+```{r, message=FALSE,results=FALSE,warning=FALSE, echo=CODE}
+GraphmeanAreaNuc <- ggboxplot(
+  DATA_RECOVERY,
+  x = "Strain",
+  y = "meanAreaNuc",
+  color = "Strain",
+  palette = "jco",
+  add = "jitter"
+) +
+  labs(x = "Strain", y = "Area of a Nucleus (µm²)") +
+  scale_x_discrete(breaks = c("Lu", "MaLu"),
+                   labels = c("Lu", "Malu")) +
+  stat_summary(
+    fun.y = mean,
+    geom = "point",
+    shape = 20,
+    size = 10,
+    color = "grey",
+    fill = "grey"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white", colour = "black"),
+    legend.position = "none",
+    legend.text = element_text(size = 24),
+    text = element_text(size = 24),
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  ylim(0, 6000) #######
+
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) +
+  plot(GraphmeanAreaNuc)
+
+Awake.labs <- c("Ctrl", "With Dormancy")
+names(Awake.labs) <- c("No", "Yes")
+
+GraphmeanAreaNucT <- 
+  GraphmeanAreaNuc +
+  facet_grid(. ~ factor(Awake, levels = c("No", "Yes")), 
+             labeller = labeller(Awake = Awake.labs)) +
+  theme(strip.background = element_rect(colour = "black", fill = "white"))
+
+plot(GraphmeanAreaNucT)
+```
+
+# AR
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+ggdensity(DATA_RECOVERY$AR, main = "Density plot for AR", xlab = "AR")
+
+ggqqplot(DATA_RECOVERY$AR)
+
+shapiro.test(DATA_RECOVERY$AR)
+```
+
+#normalize variable AR
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+bestNormalize(DATA_RECOVERY$AR, allow_orderNorm = FALSE)
+
+ARBN <- bestNormalize(DATA_RECOVERY$AR)
+
+MASS::truehist(DATA_RECOVERY$AR)
+
+MASS::truehist(ARBN$x.t)
+
+DATA_RECOVERY$AR.t <- ARBN$x.t
+
+boxplot(log10(ARBN$oos_preds), yaxt = 'n')
+
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+ggdensity(DATA_RECOVERY$AR.t, 
+          main = "Density plot for AR Normalized", 
+          xlab = "AR (Normalized)")
+
+ggqqplot(DATA_RECOVERY$AR.t)
+
+shapiro.test(DATA_RECOVERY$AR.t)
+```
+
+```{r ,echo=CODE, result=CODE,message=FALSE}
+ModelAR <- lmer(AR.t ~ Awake * Strain + (1 | ID2), data = DATA_RECOVERY)
+
+summary(ModelAR)
+
+ModelAR_2 <- lmer(AR.t ~ Awake + Strain + (1 | ID2), data = DATA_RECOVERY)
+
+summary(ModelAR_2)
+```
+
+```{r }
+anova(ModelAR, ModelAR_2, test = 'F')
+
+anova(ModelAR, type = 3, ddf = "Satterthwaite")
+
+anova(ModelAR_2, type = 3, df = "Satterthwaite")
+```
+
+```{r }
+tab_model(
+  ModelAR,
+  show.df = TRUE,
+  show.stat = TRUE,
+  show.loglik = TRUE,
+  dv.labels = "AR (Normalized)",
+  pred.labels = c("Intersection", "Age", "Lu vs Malu", "Age x Strain"))
+```
+
+```{r , echo=CODE, fig.show=CLEAN}
+plot(ModelAR)
+
+par(mfrow = c(1, 2))
+
+qqnorm(lme4::ranef(ModelAR)$ID2[, 1], main = "Random effects of ID")
+
+qqnorm(resid(ModelAR), main = "Residuals")
+```
+
+```{r }
+aggregate(AR ~ Awake + Strain, data = DATA_RECOVERY, FUN = mean)
+aggregate(AR ~ Awake + Strain, data = DATA_RECOVERY, FUN = sd)
+aggregate(AR ~ Strain, data = DATA_RECOVERY, FUN = mean)
+aggregate(AR ~ Strain, data = DATA_RECOVERY, FUN = sd)
+```
+
+#Graph, variable AR
+
+```{r, message=FALSE,results=FALSE,warning=FALSE,echo=CODE}
+GraphAR <-
+  ggboxplot(
+    DATA_RECOVERY,
+    x = "Strain",
+    y = "AR",
+    color = "Strain",
+    palette = "jco",
+    add = "jitter") + 
+  labs(x = "Strain", y = "AR") + 
+  scale_x_discrete(breaks = c("Lu", "MaLu"),
+                   labels = c("Lu", "Malu")) + 
+  stat_summary(fun.y = mean,
+               geom = "point",
+               shape = 20,
+               size = 10,
+               color = "grey",
+               fill = "grey") + 
+  theme(panel.background = element_rect(fill = "white", colour = "black"),
+        legend.position = "none",
+        legend.text = element_text(size = 24),
+        text = element_text(size = 24),
+        plot.title = element_text(hjust = 0.5)) + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) + 
+  plot(GraphAR)
+
+Awake.labs <- c("Ctrl", "With Dormancy")
+names(Awake.labs) <- c("No", "Yes")
+
+GraphART <- GraphAR +
+  facet_grid(. ~ factor(Awake,levels = c("No", "Yes")), 
+             labeller = labeller(Awake = Awake.labs)) +
+  theme(strip.background = element_rect(colour = "black", fill = "white"))
+
+plot(GraphART)
+```
+
+# Mito by volume
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+ggdensity(DATA_RECOVERY$mitoBy10Mic3, 
+          main = "Density plot for the number of mitochondria by 1000 µm³",
+          xlab = "Number of mitochondria by 1000 µm³")
+
+ggqqplot(DATA_RECOVERY$mitoBy10Mic3)
+
+shapiro.test(DATA_RECOVERY$mitoBy10Mic3)
+```
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+bestNormalize(DATA_RECOVERY$mitoBy10Mic3, allow_orderNorm = FALSE)
+
+mitoBy10Mic3BN <- bestNormalize(DATA_RECOVERY$mitoBy10Mic3)
+
+MASS::truehist(DATA_RECOVERY$mitoBy10Mic3)
+
+MASS::truehist(mitoBy10Mic3BN$x.t)
+
+DATA_RECOVERY$mitoBy10Mic3.t <- mitoBy10Mic3BN$x.t
+
+boxplot(log10(mitoBy10Mic3BN$oos_preds), yaxt = 'n')
+
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+ggdensity(DATA_RECOVERY$mitoBy10Mic3.t, 
+          main = "Density plot for the number of mitochondria by 1000 µm³",
+          xlab = "Number of mitochondria by 1000 µm³ (Normalized)")
+
+ggqqplot(DATA_RECOVERY$mitoBy10Mic3.t)
+
+shapiro.test(DATA_RECOVERY$mitoBy10Mic3.t)
+```
+
+```{r ,echo=CODE, result=CODE,message=FALSE}
+ModelmitoBy10Mic3 <- lmer(mitoBy10Mic3.t ~ Awake * Strain + (1 | ID2), data = DATA_RECOVERY)
+
+summary(ModelmitoBy10Mic3)
+
+ModelmitoBy10Mic3_2 <- lmer(mitoBy10Mic3.t ~ Awake + Strain + (1 | ID2), data = DATA_RECOVERY)
+
+summary(ModelmitoBy10Mic3_2)
+```
+
+```{r }
+anova(ModelmitoBy10Mic3, ModelmitoBy10Mic3_2, test = 'F')
+
+anova(ModelmitoBy10Mic3, type = 3, ddf = "Satterthwaite")
+
+anova(ModelmitoBy10Mic3_2, type = 3, ddf = "Satterthwaite")
+```
+
+```{r }
+tab_model(ModelmitoBy10Mic3_2,
+          show.df = TRUE,
+          show.stat = TRUE,
+          show.loglik = TRUE,
+          dv.labels = "Number of mitochondria by 1000 µm³ (Normalized)",
+          pred.labels = c("Intersection", "Recovery", "Lu vs Malu"))
+
+```
+
+```{r , echo=CODE, fig.show=CLEAN}
+plot(ModelmitoBy10Mic3_2)
+
+par(mfrow = c(1, 2))
+
+qqnorm(lme4::ranef(ModelmitoBy10Mic3_2)$ID2[, 1], main = "Random effects of ID")
+
+qqnorm(resid(ModelmitoBy10Mic3_2), main = "Residuals")
+```
+
+```{r }
+aggregate(mitoBy10Mic3 ~ Awake + Strain, data = DATA_RECOVERY, FUN = mean)
+aggregate(mitoBy10Mic3 ~ Awake + Strain, data = DATA_RECOVERY, FUN = sd)
+aggregate(mitoBy10Mic3 ~ Strain, data = DATA_RECOVERY, FUN = mean)
+aggregate(mitoBy10Mic3 ~ Strain, data = DATA_RECOVERY, FUN = sd)
+```
+
+```{r , message=FALSE,results=FALSE,warning=FALSE, echo=CODE}
+GraphmitoBy10Mic3 <- ggboxplot(DATA_RECOVERY,
+                               x = "Strain",
+                               y = "mitoBy10Mic3",
+                               color = "Strain",
+                               palette = "jco",
+                               add = "jitter") + 
+  labs(x = "Strain", y = "Nucleoide by 1000 µm³") +
+  scale_x_discrete(breaks = c("Lu", "MaLu"),
+                   labels = c("Lu", "Malu")) + 
+  stat_summary(fun.y = mean,
+               geom = "point",
+               shape = 20,
+               size = 10,
+               color = "grey",
+               fill = "grey") + 
+  theme(panel.background = element_rect(fill = "white", 
+                                        colour = "black"),
+        legend.position = "none",
+        legend.text = element_text(size = 24),
+        text = element_text(size = 24),
+        plot.title = element_text(hjust = 0.5)) + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) + 
+  ylim(0,200)
+
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) + 
+  plot(GraphmitoBy10Mic3) 
+
+Awake.labs <- c("Ctrl", "With Dormancy")
+names(Awake.labs) <- c("No", "Yes")
+
+GraphmitoBy10Mic3T <- GraphmitoBy10Mic3 + 
+  facet_grid(. ~ factor(Awake, levels = c("No", "Yes")), 
+             labeller = labeller(Awake = Awake.labs)) + 
+  theme(strip.background = element_rect(colour = "black", fill = "white"))
+
+plot(GraphmitoBy10Mic3T)
+```
+
+# MitoSox signal by volume
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+ggdensity(DATA_RECOVERY$IntBy10Mic3, 
+          main = "Density plot for Mitosox signal by 1000 µm³", 
+          xlab = "Mitosox signal by 1000 µm³")
+
+ggqqplot(DATA_RECOVERY$IntBy10Mic3)
+
+shapiro.test(DATA_RECOVERY$IntBy10Mic3)
+```
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+bestNormalize(DATA_RECOVERY$IntBy10Mic3, allow_orderNorm = FALSE)
+
+IntBy10Mic3BN <- bestNormalize(DATA_RECOVERY$IntBy10Mic3)
+
+MASS::truehist(DATA_RECOVERY$IntBy10Mic3)
+
+MASS::truehist(IntBy10Mic3BN$x.t)
+
+DATA_RECOVERY$IntBy10Mic3.t <- IntBy10Mic3BN$x.t
+
+boxplot(log10(IntBy10Mic3BN$oos_preds), yaxt = 'n')
+
+axis(2, 
+     at = log10(c(.1, .5, 1, 2, 5, 10)), 
+     labels = c(.1, .5, 1, 2, 5, 10))
+```
+
+```{r , message=FALSE,results=FALSE,echo=CODE, fig.show=CLEAN}
+ggdensity(DATA_RECOVERY$IntBy10Mic3.t, 
+          main = "Density plot for the Mitosox signal by 1000 µm³ Normalized", 
+          xlab = "Mitosox signal by 1000 µm³ (Normalized)")
+ggqqplot(DATA_RECOVERY$IntBy10Mic3.t)
+shapiro.test(DATA_RECOVERY$IntBy10Mic3.t)
+```
+
+```{r ,echo=CODE, result=CODE,message=FALSE}
+ModelIntBy10Mic3 <-
+  lmer(IntBy10Mic3.t ~ Awake * Strain + (1 | ID2), 
+       data = DATA_RECOVERY)
+
+summary(ModelIntBy10Mic3)
+
+ModelIntBy10Mic3_2 <-
+  lmer(IntBy10Mic3.t ~ Awake + Strain + (1 | ID2), 
+       data = DATA_RECOVERY)
+
+summary(ModelIntBy10Mic3_2)
+```
+
+```{r }
+anova(ModelIntBy10Mic3, ModelIntBy10Mic3_2, test = 'F')
+
+anova(ModelIntBy10Mic3, type = 3, ddf = "Satterthwaite")
+
+anova(ModelIntBy10Mic3_2, type = 3, ddf = "Satterthwaite")
+```
+
+```{r }
+tab_model(
+  ModelIntBy10Mic3,
+  show.df = TRUE,
+  show.stat = TRUE,
+  show.loglik = TRUE,
+  dv.labels = "Mitosox signal by 1000 µm³ (Normalized)",
+  pred.labels = c("Intersection",
+                  "Recovery",
+                  "Lu vs Malu"))
+```
+
+```{r , echo=CODE, fig.show=CLEAN}
+plot(ModelIntBy10Mic3)
+
+par(mfrow = c(1, 2))
+qqnorm(lme4::ranef(ModelIntBy10Mic3)$ID2[, 1],
+       main = "Random effects of ID")
+
+qqnorm(resid(ModelIntBy10Mic3), 
+       main = "Residuals")
+```
+
+```{r }
+aggregate(IntBy10Mic3 ~ Awake + Strain, data = DATA_RECOVERY, FUN = mean)
+aggregate(IntBy10Mic3 ~ Awake + Strain, data = DATA_RECOVERY, FUN = sd)
+aggregate(IntBy10Mic3 ~ Strain, data = DATA_RECOVERY, FUN = mean)
+aggregate(IntBy10Mic3 ~ Strain, data = DATA_RECOVERY, FUN = sd)
+```
+
+```{r , message=FALSE,results=FALSE,warning=FALSE, echo=CODE}
+GraphIntBy10Mic3 <- ggboxplot(
+  DATA_RECOVERY,
+  x = "Strain",
+  y = "IntBy10Mic3",
+  color = "Strain",
+  palette = "jco",
+  add = "jitter") +
+  labs(x = "Strain", y = "Mitosox signal by 1000 µm³") +
+  scale_x_discrete(breaks = c("Lu", "MaLu"), labels = c("Lu", "Malu")) +
+  stat_summary(
+    fun.y = mean,
+    geom = "point",
+    shape = 20,
+    size = 10,
+    color = "grey",
+    fill = "grey") +
+  theme(
+    panel.background = element_rect(fill = "white",colour = "black"),
+    legend.position = "none",
+    legend.text = element_text(size = 24),
+    text = element_text(size = 24),
+    plot.title = element_text(hjust = 0.5)) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  ylim(0, 4e+08)
+
+theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()) +
+  plot(GraphIntBy10Mic3)
+
+Awake.labs <- c("Ctrl", "With Dormancy")
+names(Awake.labs) <- c("No", "Yes")
+
+GraphIntBy10Mic3T <- GraphIntBy10Mic3 +
+  facet_grid(. ~ factor(Awake, levels = c("No", "Yes")),
+             labeller = labeller(Awake = Awake.labs)) +
+  theme(strip.background = element_rect(colour = "black", fill = "white"))
+
+plot(GraphIntBy10Mic3T)
+```
