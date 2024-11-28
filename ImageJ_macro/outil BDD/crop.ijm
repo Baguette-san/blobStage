@@ -64,7 +64,7 @@ function dup(){
 	last = getResult("max", i);		
 	run("Make Substack...", "channels=1-2 slices="+first+"-"+last);
 	run("8-bit");
-	saveAs("Tiff", crop_output_dir+"cFullmod10_"+title);
+	saveAs("Tiff", crop_output_dir+"directed-crop_"+title);
 }
 
 function proj(){
