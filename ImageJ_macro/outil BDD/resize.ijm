@@ -54,7 +54,7 @@ function resize() {
 	getDimensions(width, height, channels, slices, frames);
 	if (width!=1576) {
 		run("Size...", "width=1576 height=1576 depth="+slices+" constrain average interpolation=Bilinear");
-		saveAs("Tiff", crop_output_dir+"resize - "+name);
+		saveAs("Tiff", crop_output_dir+"resize_"+name);
 	}
 }
 
